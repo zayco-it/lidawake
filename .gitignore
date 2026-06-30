@@ -1,0 +1,15 @@
+# Build output + vendored binaries (re-fetch with tools/fetch-sparkle.sh)
+build/
+*.app
+vendor/
+dist/
+
+# Secrets — NEVER commit (Sparkle private-key export, signing certs)
+*private_key*
+*.p12
+
+# Private working docs — business strategy / enrollment notes stay OUT of the public repo
+PLAN.md
+docs/
+
+.DS_Store

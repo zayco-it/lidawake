@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>lidawake</string>
+    <key>CFBundleDisplayName</key>
+    <string>lidawake</string>
+    <key>CFBundleExecutable</key>
+    <string>lidawake</string>
+    <key>CFBundleIconFile</key>
+    <string>lidawake</string>
+    <key>CFBundleIdentifier</key>
+    <string>it.zayco.lidawake</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>SUFeedURL</key>
+    <string>https://zayco.it/lidawake/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>zn115Xj1Uq8vudvuTaTxexHuKBfgmv5399p+8j2UGv4=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+</dict>
+</plist>

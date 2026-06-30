@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>it.zayco.lidawake.helper</string>
+
+    <!-- Bundle-RELATIVE path to the daemon binary, no leading slash. -->
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/lidawake-helper</string>
+
+    <key>MachServices</key>
+    <dict>
+        <key>it.zayco.lidawake.helper</key>
+        <true/>
+    </dict>
+
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>it.zayco.lidawake</string>
+    </array>
+
+    <!-- Stay resident so reset-on-launch acts as a crash backstop. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Avoid a tight restart loop if pmset were ever unavailable. -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>ExitTimeOut</key>
+    <integer>5</integer>
+</dict>
+</plist>
