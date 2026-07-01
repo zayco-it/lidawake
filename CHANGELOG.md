@@ -3,7 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## [1.0.0] — unreleased
+## [1.0.1] — unreleased
+
+- **Settings now apply live** — changing a toggle takes effect immediately, no need to turn lidawake off and on again.
+- Clearer wording in Settings (it now explains the screen dims to save power while your Mac stays awake).
+
+## [1.0.0] — 2026-07-01
 
 First public release.
 

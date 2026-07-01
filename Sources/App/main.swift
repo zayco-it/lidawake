@@ -39,6 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lid.onLidClosed    = { [weak self] in self?.handleLidClosed() }
         thermal.start()
 
+        // Apply setting changes LIVE while armed — no disarm/re-arm dance.
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.reconcileSettings()
+        }
+
         // Register the daemon (and surface the approval UI if it isn't enabled yet).
         _ = helperManager.ensureRegistered()
 
@@ -176,9 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 else { self.notify("Couldn\u{2019}t turn on", err.message) }
                 return
             }
-            if Settings.keepAwakeLidOpen {
-                self.wake.acquire(keepDisplayOn: Settings.keepScreenOnLidOpen)   // lid-open assertions
-            }
+            self.wake.apply(systemAwake: Settings.keepAwakeLidOpen,
+                            screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)  // lid-open assertions
             self.power.startMonitoring()     // live AC/battery watch
             self.lid.start()                 // watch for lid close -> sleep display
             self.armed = true
@@ -209,6 +214,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         armed = false
         refreshItems(); updateIcon()
         notify("lidawake turned off", "Stopped because \(why).")
+    }
+
+    /// Re-apply settings live while armed, so flipping a toggle takes effect
+    /// immediately (no disarm/re-arm). Idempotent; safe on any UserDefaults change.
+    private func reconcileSettings() {
+        guard armed else { return }
+        // A power-setting change may make being armed unsafe here (e.g. battery no
+        // longer allowed) — cut out cleanly if so.
+        let (ok, _) = PowerPolicy.armingAllowed()
+        guard ok else { autoDisarm("battery use isn\u{2019}t allowed with the new settings"); return }
+        wake.apply(systemAwake: Settings.keepAwakeLidOpen,
+                   screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
     }
 
     /// Lid just closed while armed — sleep the display (if the user wants it) so a

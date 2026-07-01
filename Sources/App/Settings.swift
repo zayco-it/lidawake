@@ -60,6 +60,8 @@ struct SettingsView: View {
                 Toggle("Also keep my Mac awake", isOn: $keepOpen)
                 if keepOpen {
                     Toggle("Keep the screen on too", isOn: $screenOnOpen)
+                    Text("Otherwise the screen dims to save power while your Mac stays awake.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
             }
         }

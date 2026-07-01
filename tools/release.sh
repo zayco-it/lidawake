@@ -1,46 +1,66 @@
 #!/bin/sh
-# Build a signed release, package it for Sparkle, and (re)generate the appcast.
-# Output -> dist/. Then: upload the .zip to GitHub Releases, and publish
-# dist/appcast.xml at the SUFeedURL (https://zayco.it/lidawake/appcast.xml).
+# One-command release. Ships whatever version is in Resources/Info.plist:
+#   build → sign → notarize+staple app → DMG (notarize+staple) → Sparkle zip →
+#   GitHub Release → regenerate the appcast (pointing at the GitHub asset) →
+#   deploy the appcast to zayco.it.
 #
-# Prereqs:
-#   - vendor/Sparkle present            (tools/fetch-sparkle.sh)
-#   - Sparkle EdDSA private key in keychain  (bin/generate_keys, one-time)
-#   - Developer ID cert in keychain
+# Prereqs: vendor/Sparkle (tools/fetch-sparkle.sh), Developer ID cert,
+# notarytool keychain profile "lidawake-notary", gh authed as zayco-it,
+# and ~/projects/zayco-site checked out (for the appcast + deploy).
 #
-# For a REAL release, set DOWNLOAD_URL_PREFIX to the GitHub Releases download
-# base so the appcast's enclosure URLs point at the uploaded zip, e.g.:
-#   DOWNLOAD_URL_PREFIX="https://github.com/<org>/lidawake/releases/download/v1.0.0/" tools/release.sh
+# Notarization can take a while — run this in the background.
 set -eu
 cd "$(dirname "$0")/.."
 
+IDENTITY="Developer ID Application: zaYco s. r. o. (FXNTJBLQ2F)"
+NOTARY="lidawake-notary"
+REPO="zayco-it/lidawake"
 APP="build/lidawake.app"
 DIST="dist"
-GEN="vendor/Sparkle/bin/generate_appcast"
+SITE="$HOME/projects/zayco-site"
 
-echo "== building signed release =="
+VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+TAG="v$VER"
+echo "==== releasing lidawake $VER ($TAG) ===="
+
+echo "== build + sign =="
 SIGN=1 ./build.sh >/dev/null
-echo "   built + signed."
-
-VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
-ZIP="$DIST/lidawake-$VER.zip"
-
 mkdir -p "$DIST"
-echo "== packaging $APP -> $ZIP =="
+
+echo "== notarize + staple the app =="
+ditto -c -k --keepParent "$APP" "$DIST/_app.zip"
+xcrun notarytool submit "$DIST/_app.zip" --keychain-profile "$NOTARY" --wait
+xcrun stapler staple "$APP"
+spctl -a -vv "$APP"
+rm -f "$DIST/_app.zip"
+
+echo "== make + notarize + staple the DMG =="
+./tools/make-dmg.sh >/dev/null
+DMG="$DIST/lidawake-$VER.dmg"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY" --wait
+xcrun stapler staple "$DMG"
+
+echo "== zip the stapled app (Sparkle update artifact) =="
+ZIP="$DIST/lidawake-$VER.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
-echo "== generating appcast (EdDSA-signs each archive with the keychain key) =="
-if [ -n "${DOWNLOAD_URL_PREFIX:-}" ]; then
-    "$GEN" --download-url-prefix "$DOWNLOAD_URL_PREFIX" "$DIST"
-else
-    "$GEN" "$DIST"
-fi
+echo "== GitHub Release $TAG =="
+git tag -a "$TAG" -m "lidawake $VER" 2>/dev/null || true
+git push origin "$TAG"
+NOTES="$(awk '/^## \[/{c++; next} c==1{print} c==2{exit}' CHANGELOG.md)"
+printf '%s\n\nRequires an Apple Silicon Mac, macOS 13 (Ventura) or later.\n' "$NOTES" \
+  | gh release create "$TAG" "$DMG" "$ZIP" --repo "$REPO" --title "lidawake $VER" --notes-file -
 
-echo ""
-echo "dist/ now holds:"; ls -1 "$DIST"
-echo ""
-echo "Publish:"
-echo "  1) Upload $ZIP to GitHub Releases (tag v$VER)."
-echo "  2) Publish $DIST/appcast.xml at https://zayco.it/lidawake/appcast.xml (SUFeedURL)."
-echo "  (Real release: re-run with DOWNLOAD_URL_PREFIX=<github release base>/ so enclosure URLs are correct.)"
+echo "== regenerate the appcast (points at the GitHub asset) + deploy =="
+APC="$(mktemp -d)"
+cp "$ZIP" "$APC/"
+vendor/Sparkle/bin/generate_appcast \
+  --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" "$APC" >/dev/null
+mkdir -p "$SITE/public/lidawake"
+cp "$APC/appcast.xml" "$SITE/public/lidawake/appcast.xml"
+cp "$APC/appcast.xml" "$DIST/appcast.xml"
+rm -rf "$APC"
+( cd "$SITE" && ./deploy.sh )
+
+echo "==== DONE: $VER released — DMG on GitHub, appcast live at https://zayco.it/lidawake/appcast.xml ===="
