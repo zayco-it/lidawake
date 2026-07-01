@@ -84,15 +84,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         approveItem.target = self
         menu.addItem(approveItem)
 
+        let aboutItem = NSMenuItem(title: "About lidawake", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
         let settingsItem = NSMenuItem(title: "Settings\u{2026}", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        // Sparkle wires this up (enables/validates itself); targets the updater controller.
+        // Custom action so we can activate the app first (see checkForUpdates()).
         let updatesItem = NSMenuItem(title: "Check for Updates\u{2026}",
-                                     action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                                     action: #selector(checkForUpdates),
                                      keyEquivalent: "")
-        updatesItem.target = updaterController
+        updatesItem.target = self
         menu.addItem(updatesItem)
 
         menu.addItem(.separator())
@@ -145,6 +149,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func approveHelper() { showOnboarding() }
     @objc private func openSettings()  { settingsWindow.show() }
+
+    /// Native About panel — shows name, version, and copyright from Info.plist + the app icon.
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    // Activate first (we're an accessory app) so Sparkle's window takes focus on the
+    // FIRST click — otherwise the first check's window can't hold focus and vanishes.
+    @objc private func checkForUpdates() {
+        NSApp.activate(ignoringOtherApps: true)
+        updaterController.checkForUpdates(nil)
+    }
 
     private func showOnboarding() {
         onboardingWindow.show(

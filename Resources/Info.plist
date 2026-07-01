@@ -13,9 +13,11 @@
     <key>CFBundleIdentifier</key>
     <string>it.zayco.lidawake</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>4</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.3</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 zaYco s. r. o. — zayco.it/lidawake</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
@@ -28,5 +30,7 @@
     <string>zn115Xj1Uq8vudvuTaTxexHuKBfgmv5399p+8j2UGv4=</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
 </dict>
 </plist>

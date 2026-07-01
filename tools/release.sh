@@ -12,6 +12,13 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+# The git tag must match what actually ships. Refuse a dirty tree — this is exactly
+# what silently made the v1.0.2 tag point at the 1.0.1 commit (changes never committed).
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: uncommitted changes — commit them first so the tag matches the build." >&2
+  exit 1
+fi
+
 IDENTITY="Developer ID Application: zaYco s. r. o. (FXNTJBLQ2F)"
 NOTARY="lidawake-notary"
 REPO="zayco-it/lidawake"
@@ -55,6 +62,14 @@ printf '%s\n\nRequires an Apple Silicon Mac, macOS 13 (Ventura) or later.\n' "$N
 echo "== regenerate the appcast (points at the GitHub asset) + deploy =="
 APC="$(mktemp -d)"
 cp "$ZIP" "$APC/"
+# Release notes from the CHANGELOG's top section. Sparkle embeds "<zip-basename>.html"
+# as the update's notes — the "what's new" panel. (The auto-download checkbox is hidden
+# separately, via SUAllowsAutomaticUpdates=false in Info.plist.)
+{
+  echo "<h2>lidawake $VER</h2><ul>"
+  awk '/^## \[/{c++; next} c==1{print} c==2{exit}' CHANGELOG.md | sed -n 's/^- \(.*\)/<li>\1<\/li>/p'
+  echo "</ul>"
+} | sed 's/\*\*\([^*]*\)\*\*/<strong>\1<\/strong>/g' > "$APC/lidawake-$VER.html"
 vendor/Sparkle/bin/generate_appcast \
   --download-url-prefix "https://github.com/$REPO/releases/download/$TAG/" "$APC" >/dev/null
 mkdir -p "$SITE/public/lidawake"

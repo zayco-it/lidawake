@@ -9,6 +9,23 @@ release; the rest are good coverage.
 
 ## Results log
 
+**2026-07-01 — 1.0.2 (About item, onboarding-feedback, appcast release-notes/no-checkbox), tested BEFORE
+release.** PASS (signed build): §1-normal — helper enabled, no spurious onboarding, "Keep my Mac awake" active;
+§10 About → "Version 1.0.2 (3)" + copyright + icon; onboarding "I've turned it on" now shows the "don't see it
+enabled yet" feedback (reproduced on an *unsigned* build, which is the only way to hold the not-enabled state);
+Quick regression — arm→`SleepDisabled 1`, disarm→`0`, quit-while-armed→`0` clean, helper survives (KeepAlive).
+Release-notes HTML dry-run renders correctly. **Skipped (documented): §3 lid-close, §6 battery, §7 thermal —
+1.0.2 changed zero core wake/safety code since 1.0.1's full pass.** Post-release TODO: 1.0.1→1.0.2 self-update
+test to confirm the update dialog shows notes + no auto-download checkbox (only verifiable against a live appcast).
+
+**2026-07-01 — 1.0.1 live-settings fix, tested (this time BEFORE promoting the update).** PASS: arm holds
+the correct locks (system + display per settings); **live-apply confirmed** — toggling "keep screen on too"
+off/on while armed drops/returns the display lock *immediately*, system lock undisturbed; toggling "also keep
+awake" off drops both lid-open locks while `SleepDisabled` stays 1; no spurious disarm across 4 toggles;
+disarm restores (0, no leaked locks); force-kill dead-man's switch still fires (→0 in ~2s). The
+`WakeAssertionManager` rewrite + `UserDefaults` observer introduced no regressions. (Lesson: test-before-ship —
+this was validated *after* release by mistake; see the `never-ship-untested` rule.)
+
 **2026-06-29 — full pass on M5 / Tahoe 26.4 (signed build).** PASS: §1 first-run +
 Welcome onboarding · §2 glyph/menu · **§3 core lid-closed awake — on AC AND on
 battery** (clean ~4.5-min sampled run, `SleepDisabled` held 1 throughout, zero
@@ -149,6 +166,26 @@ On **AC power**, no external display:
 - [ ] Toggling any switch persists (re-open the window, or relaunch, to confirm).
 
 ---
+
+## 10. Version, About & auto-update (added 1.0.1 / 1.0.2)
+
+- [ ] Menu → **About lidawake** shows the icon + correct **Version x.y.z (build)** + copyright.
+- [ ] **Live settings** (needs a *signed* build so it can arm): while armed, toggling "Keep the screen on
+      too" off/on adds/removes the display lock **immediately** (no disarm/re-arm); toggling "Also keep my Mac
+      awake" off drops both lid-open locks while `SleepDisabled` stays 1; no spurious disarm across toggles.
+      Verify via `pmset -g assertions | grep it.zayco.lidawake`.
+- [ ] **First-run "I've turned it on"**: if the helper still isn't enabled, it shows a feedback line (not a
+      silent no-op).
+- [ ] **Auto-update (Sparkle)**: install an *older* version → **Check for Updates** finds the newer one → the
+      dialog shows the **release notes** and has **no "auto-download" checkbox** → Install → it downloads from
+      GitHub, verifies the signature, installs, and relaunches at the new version. (The 1.0.0→1.0.1 flow, with
+      a fresh version pair.)
+
+> **Release rule:** every release runs the **Quick regression pass** + a test for anything new or changed.
+> A release touching **core wake/safety logic** runs this ENTIRE file. For a narrow UI-only patch it's fine to
+> skip the heavy physical re-runs (§3 lid-close, §6 battery, §7 thermal) — **as long as you write down that you
+> did and why** (core unchanged), in the results log. Risk-based and documented, never silent. Compiling is not
+> testing. See the `never-ship-untested` rule.
 
 ## Quick regression pass (after any code change)
 

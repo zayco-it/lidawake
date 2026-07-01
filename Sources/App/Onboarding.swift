@@ -10,6 +10,7 @@ struct OnboardingView: View {
     let openLoginItems: () -> Void
     let onClose: () -> Void
     @State private var enabled: Bool
+    @State private var stillOff = false
 
     init(isEnabled: @escaping () -> Bool, openLoginItems: @escaping () -> Void, onClose: @escaping () -> Void) {
         self.isEnabled = isEnabled
@@ -41,7 +42,13 @@ struct OnboardingView: View {
                     .controlSize(.large)
                 Text("Find lidawake under \u{201C}Allow in the Background,\u{201D} switch it on, then click below.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                Button("I\u{2019}ve turned it on") { enabled = isEnabled() }
+                Button("I\u{2019}ve turned it on") {
+                    if isEnabled() { enabled = true; stillOff = false } else { stillOff = true }
+                }
+                if stillOff {
+                    Text("Hmm — I don\u{2019}t see it enabled yet. Make sure the lidawake switch is on under \u{201C}Allow in the Background,\u{201D} then try again.")
+                        .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
             }
 
             Button(enabled ? "Get Started" : "Skip for now") { onClose() }
