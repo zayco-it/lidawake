@@ -75,6 +75,7 @@ vendor/Sparkle/bin/generate_appcast \
 mkdir -p "$SITE/public/lidawake"
 cp "$APC/appcast.xml" "$SITE/public/lidawake/appcast.xml"
 cp "$APC/appcast.xml" "$DIST/appcast.xml"
+cp "$DMG" "$SITE/public/lidawake/lidawake.dmg"   # stable-named download for the product page
 rm -rf "$APC"
 ( cd "$SITE" && ./deploy.sh )
 
