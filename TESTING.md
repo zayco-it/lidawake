@@ -9,6 +9,36 @@ release; the rest are good coverage.
 
 ## Results log
 
+**2026-07-04 — 1.1.0 (paid licensing: 14-day trial → Freemius license key, grandfather 1.0.x), tested BEFORE
+release.** Licensing is app-side + signing-independent, so most was verified on the UNSIGNED dev build (forced
+states via `defaults` + env hooks) plus a real SANDBOX purchase: **live activation PROVEN** — real key → `FreemiusProvider.activate`
+hit api.freemius.com → success → `LicenseRecord` cached → relaunch came up `.licensed` (real Freemius install, not
+mock); **wrong key** → "That license key wasn't recognized"; **trial About** "Free trial — 9 days left"; **expired**
+license window (price-free "Buy lidawake…"); **⌘V paste** works (new Edit menu); hardware-`IOPlatformUUID` binding
+(1 Mac = 1 of 3 seats). Headless `tools/license-selftest.swift` (real sources, isolated defaults) = **11/11**
+(trial/grandfather/sticky/countdown/expiry/licensed/expired-record). On the SIGNED 1.1.0 build: **grandfather PASS** —
+this Mac (existing 1.0.x user) launched with NO paywall, "Keep my Mac awake" enabled; and `arm()` was proven to pass
+the new paywall gate (ran all the way through to the final helper XPC call). **NOT freshly re-run (documented): the
+literal arm→`SleepDisabled 1` flip on 1.1.0** — the root helper was wedged by SELF-INFLICTED dev churn (unsigned +
+signed builds of the same bundle id), NOT a code regression: **helper + Shared code are byte-identical to v1.0.3**
+(`git diff v1.0.3 -- Sources/Helper Sources/Shared` is empty), and arm/disarm/pmset were fully verified in 1.0.x.
+Per the proportionate rule, core wake/safety is UNCHANGED → §3 lid-close, §6 battery, §7 thermal skipped. **Untested:**
+the all-3-activations-used error path (needs 3 Macs). **Known-open at ship:** the PRODUCTION checkout wasn't confirmed
+processing a real purchase (sandbox only) — existing users are grandfathered + new users have a 14-day trial buffer.
+
+**2026-07-01 — 1.0.3 (no-checkbox one-click updates + first-click fix), tested BEFORE and validated AFTER
+release.** Pre-ship: checkbox removal (`SUAllowsAutomaticUpdates=false`) AND first-click fix (activate before
+`checkForUpdates`) both PROVEN locally on a fake "1.0.1 + key" build that finds the live 1.0.2 — dialog opened
+on the FIRST click, no auto-download checkbox; About=1.0.3; `git diff` vs tested v1.0.1 shows
+WakeAssertionManager/PowerPolicy/HelperManager/Settings **0-changed** (only Onboarding feedback + About +
+checkForUpdates differ). Post-release: live **1.0.2→1.0.3 Sparkle self-update** — downloaded/verified/installed/
+relaunched as 1.0.3; **NO re-onboarding** (approval preserved — the greyed dev-build "Finish setup" was
+self-inflicted rebuild churn on `build/`, NOT a regression; the clean `~/Applications` install stayed enabled);
+arm→`SleepDisabled 1`, disarm→`0`. **Key lesson:** the update DIALOG is drawn by the OLD (running) app, so the
+checkbox/first-click fixes only take effect once a user is already ON the fixed version — the 1.0.2→1.0.3
+dialog still showed 1.0.2's checkbox (expected/unavoidable, not a bug). Also fixed release hygiene: `release.sh`
+now refuses a dirty tree so tags match the build (the v1.0.2 tag had silently drifted to the 1.0.1 commit).
+
 **2026-07-01 — 1.0.2 (About item, onboarding-feedback, appcast release-notes/no-checkbox), tested BEFORE
 release.** PASS (signed build): §1-normal — helper enabled, no spurious onboarding, "Keep my Mac awake" active;
 §10 About → "Version 1.0.2 (3)" + copyright + icon; onboarding "I've turned it on" now shows the "don't see it

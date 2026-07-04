@@ -3,6 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.0] — 2026-07-04
+
+- **If you already use lidawake, nothing changes — it stays free for you, forever.** Thank you for being an early user.
+- Going forward, lidawake has a **14-day free trial**, then a one-time purchase that works on up to **3 Macs**.
+- The **About** panel now shows your license or trial status, and paste (⌘V) works in the license field.
+
 ## [1.0.3] — 2026-07-01
 
 - Removed the confusing "automatically download updates" checkbox from update prompts — updates stay one-click and intentional.

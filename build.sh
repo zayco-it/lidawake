@@ -26,7 +26,10 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/PowerPolicy.swift \
           Sources/App/LidMonitor.swift \
           Sources/App/Settings.swift \
-          Sources/App/Onboarding.swift"
+          Sources/App/Onboarding.swift \
+          Sources/App/LicenseProvider.swift \
+          Sources/App/LicenseController.swift \
+          Sources/App/LicenseWindow.swift"
 HELPER_SRCS="Sources/Helper/main.swift \
              Sources/Helper/HelperDelegate.swift \
              Sources/Helper/HelperImplementation.swift"

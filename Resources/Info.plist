@@ -13,9 +13,9 @@
     <key>CFBundleIdentifier</key>
     <string>it.zayco.lidawake</string>
     <key>CFBundleVersion</key>
-    <string>4</string>
+    <string>5</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.3</string>
+    <string>1.1.0</string>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 zaYco s. r. o. — zayco.it/lidawake</string>
     <key>CFBundlePackageType</key>

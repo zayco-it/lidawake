@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let lid            = LidMonitor()
     private let settingsWindow = SettingsWindowController()
     private let onboardingWindow = OnboardingWindowController()
+    private let license = LicenseController(provider: LicenseConfig.makeProvider())
+    private let licenseWindow = LicenseWindowController()
     // Sparkle auto-updater (reads SUFeedURL + SUPublicEDKey from Info.plist).
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -28,10 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Dynamic menu items, refreshed on every open.
     private var toggleItem: NSMenuItem!
     private var statusLineItem: NSMenuItem!
+    private var licenseItem: NSMenuItem!
     private var approveItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Settings.registerDefaults()
+        installEditMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
@@ -47,6 +51,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Register the daemon (and surface the approval UI if it isn't enabled yet).
         _ = helperManager.ensureRegistered()
+
+        // Decide once: existing free user (grandfathered) vs. new (start the 14-day
+        // trial). MUST run before maybeShowOnboarding(), which sets "seenWelcome".
+        let usedBefore = UserDefaults.standard.bool(forKey: "seenWelcome")
+            || helperManager.state == .enabled
+        license.bootstrap(usedBefore: usedBefore)
+        license.revalidateIfNeeded()
 
         buildMenu()
         updateIcon()
@@ -76,6 +87,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         statusLineItem.isEnabled = false
         menu.addItem(statusLineItem)
+
+        // Trial/buy line — clickable to open the buy / enter-key window. Hidden once
+        // licensed or grandfathered.
+        licenseItem = NSMenuItem(title: "", action: #selector(showLicense), keyEquivalent: "")
+        licenseItem.target = self
+        menu.addItem(licenseItem)
 
         menu.addItem(.separator())
 
@@ -113,16 +130,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshItems()
     }
 
+    /// An accessory (LSUIElement) app shows no menu bar, so text fields lose the
+    /// standard Cut/Copy/Paste/Select-All shortcuts (macOS routes them through the
+    /// Edit menu). Install a minimal Edit menu so the key-equivalents are handled —
+    /// the menu bar stays hidden for an accessory app. Needed for the license field.
+    private func installEditMenu() {
+        let main = NSMenu()
+        let editItem = NSMenuItem()
+        main.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        editItem.submenu = edit
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        NSApp.mainMenu = main
+    }
+
     // Helper status isn't pushed, so refresh whenever the menu opens.
     func menuWillOpen(_ menu: NSMenu) { refreshItems() }
 
     private func refreshItems() {
-        let enabled = (helperManager.state == .enabled)
-        approveItem.isHidden = enabled
+        let helperEnabled = (helperManager.state == .enabled)
+        let entitled = license.isEntitled
+        approveItem.isHidden = helperEnabled
         toggleItem.state = armed ? .on : .off
-        toggleItem.isEnabled = enabled
-        if !enabled {
+        toggleItem.isEnabled = helperEnabled && entitled
+
+        // Trial / buy line — only while unlicensed.
+        switch license.status {
+        case .licensed, .grandfathered:
+            licenseItem.isHidden = true
+        case .trial(let d):
+            licenseItem.isHidden = false
+            licenseItem.title = "Free trial \u{2014} \(d) day\(d == 1 ? "" : "s") left \u{2014} Buy\u{2026}"
+        case .expired:
+            licenseItem.isHidden = false
+            licenseItem.title = "Free trial ended \u{2014} Buy lidawake\u{2026}"
+        }
+
+        // Status line.
+        if !helperEnabled {
             statusLineItem.title = "Finish the one-time setup to begin"
+        } else if !entitled {
+            statusLineItem.title = "Your free trial has ended \u{2014} buy to keep using lidawake"
         } else if armed {
             statusLineItem.title = "On \u{2014} you can close the lid"
         } else {
@@ -150,10 +201,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func approveHelper() { showOnboarding() }
     @objc private func openSettings()  { settingsWindow.show() }
 
-    /// Native About panel — shows name, version, and copyright from Info.plist + the app icon.
+    /// Buy / enter-license window. Refresh the menu after, since status may change.
+    @objc private func showLicense() {
+        licenseWindow.show(controller: license) { [weak self] in self?.refreshItems() }
+    }
+
+    /// Native About panel — name, version, copyright, plus a line showing the current
+    /// license state (trial days left / licensed) in the credits area.
     @objc private func showAbout() {
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(nil)
+        let line: String
+        switch license.status {
+        case .licensed:      line = "Licensed \u{2014} thank you!"
+        case .grandfathered: line = "Licensed \u{2014} early supporter, thank you!"
+        case .trial(let d):  line = "Free trial \u{2014} \(d) day\(d == 1 ? "" : "s") left"
+        case .expired:       line = "Free trial ended \u{2014} buy to keep using lidawake"
+        }
+        let para = NSMutableParagraphStyle(); para.alignment = .center
+        let credits = NSAttributedString(string: line, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: para,
+        ])
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     // Activate first (we're an accessory app) so Sparkle's window takes focus on the
@@ -184,6 +254,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func arm() {
+        // Paywall gate: no arming once the trial's over and there's no license.
+        guard license.isEntitled else { showLicense(); return }
         guard helperManager.state == .enabled else {
             _ = helperManager.ensureRegistered()
             showOnboarding()
