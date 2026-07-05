@@ -6,6 +6,9 @@ lidawake is a tiny menu-bar app that stops your Mac from sleeping when you close
 lid, so it can keep downloading, backing up, running a task, or playing audio with
 the lid shut. One click to turn it on, one to turn it off. Safe by default.
 
+It does a few things, and does them well — made for people who just want to close the
+lid and keep going, not to configure anything.
+
 ## What it does — and doesn't
 
 lidawake installs a small privileged helper that does exactly one thing: toggles
@@ -33,10 +36,25 @@ built to be careful:
 - Apple Silicon Mac (M1 or later)
 - macOS 13 (Ventura) or later
 
+## Free to build, or done for you
+
+lidawake's code is MIT — read it, and build it yourself for free (see
+[Build from source](#build-from-source)). The **notarized, ready-to-run app** on
+**[zayco.it/lidawake](https://zayco.it/lidawake)** is a small paid product: a **14-day free
+trial**, then a **one-time $6.67** (works on up to 3 Macs). If you used lidawake before it
+became paid, it stays free for you — forever.
+
+**Why pay for something open source?** Not for a secret — the trick (`pmset disablesleep`) is
+well known, and free tools use it too. You're paying for the *packaged* version: notarized so
+macOS trusts it on the first launch, a signed helper you approve with one click (no `sudo`
+scripts or sudoers grants, no "unidentified developer" bypass), the safety guards, and a real
+company to answer if something breaks. Prefer to build it yourself? Please do — that's what the
+source is for.
+
 ## Install
 
-Download the latest signed, notarized build from **[zayco.it/lidawake](https://zayco.it/lidawake)**.
-(Homebrew coming later.)
+Download the latest signed, notarized build from **[zayco.it/lidawake](https://zayco.it/lidawake)**
+and drag lidawake to your Applications folder. (Homebrew coming later.)
 
 ## How it works
 
