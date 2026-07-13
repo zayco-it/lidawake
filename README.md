@@ -54,7 +54,13 @@ source is for.
 ## Install
 
 Download the latest signed, notarized build from **[zayco.it/lidawake](https://zayco.it/lidawake)**
-and drag lidawake to your Applications folder. (Homebrew coming later.)
+and drag lidawake to your Applications folder.
+
+Or with **Homebrew**:
+
+```sh
+brew install --cask zayco-it/tap/lidawake
+```
 
 ## How it works
 
