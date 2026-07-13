@@ -47,6 +47,11 @@ DMG="$DIST/lidawake-$VER.dmg"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY" --wait
 xcrun stapler staple "$DMG"
 
+echo "== checksum the DMG (published so users can verify the download) =="
+SHA="$DIST/lidawake-$VER.dmg.sha256"
+( cd "$DIST" && shasum -a 256 "lidawake-$VER.dmg" ) | tee "$SHA"
+DMG_SHA="$(awk '{print $1}' "$SHA")"
+
 echo "== zip the stapled app (Sparkle update artifact) =="
 ZIP="$DIST/lidawake-$VER.zip"
 rm -f "$ZIP"
@@ -56,8 +61,8 @@ echo "== GitHub Release $TAG =="
 git tag -a "$TAG" -m "lidawake $VER" 2>/dev/null || true
 git push origin "$TAG"
 NOTES="$(awk '/^## \[/{c++; next} c==1{print} c==2{exit}' CHANGELOG.md)"
-printf '%s\n\nRequires an Apple Silicon Mac, macOS 13 (Ventura) or later.\n' "$NOTES" \
-  | gh release create "$TAG" "$DMG" "$ZIP" --repo "$REPO" --title "lidawake $VER" --notes-file -
+printf '%s\n\nRequires an Apple Silicon Mac, macOS 13 (Ventura) or later.\n\nSHA-256 (DMG): `%s`\n' "$NOTES" "$DMG_SHA" \
+  | gh release create "$TAG" "$DMG" "$ZIP" "$SHA" --repo "$REPO" --title "lidawake $VER" --notes-file -
 
 echo "== regenerate the appcast (points at the GitHub asset) + deploy =="
 APC="$(mktemp -d)"
@@ -76,6 +81,7 @@ mkdir -p "$SITE/public/lidawake"
 cp "$APC/appcast.xml" "$SITE/public/lidawake/appcast.xml"
 cp "$APC/appcast.xml" "$DIST/appcast.xml"
 cp "$DMG" "$SITE/public/lidawake/lidawake.dmg"   # stable-named download for the product page
+( cd "$SITE/public/lidawake" && shasum -a 256 lidawake.dmg > lidawake.dmg.sha256 )   # checksum matching the stable filename
 rm -rf "$APC"
 ( cd "$SITE" && ./deploy.sh )
 
