@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.6] — 2026-07-26
+
+- After an update, lidawake now reconnects its background helper on its own and waits as long as it needs — so you no longer have to click “Try Again” if the helper takes a little longer to start.
+
 ## [1.1.5] — 2026-07-26
 
 - Turning lidawake on right after an update is now clean: it briefly shows “Getting lidawake ready…” while it reconnects its background helper, then turns on in one click. The Welcome window no longer reappears if you’ve already set lidawake up.

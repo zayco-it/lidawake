@@ -426,13 +426,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         preparingWindow.showPreparing()
         refreshItems()
-        NSLog("[lidawake] helper unreachable — reconnecting (reload + poll)")
-        helperManager.reload()
-        helperClient.disconnect()
-        pollUntilReadyThenArm(attemptsLeft: 20)   // ~12s budget (20 × 0.6s)
+        NSLog("[lidawake] helper unreachable — reconnecting")
+        reconnectRound(roundsLeft: 3)
     }
 
-    private func pollUntilReadyThenArm(attemptsLeft: Int) {
+    /// One reconnect attempt: re-register the daemon, then poll the real turn-on for
+    /// a while. If this round runs out, start another round with a fresh
+    /// re-registration — this AUTOMATES the manual "Try Again" that reliably works
+    /// (a freshly-registered daemon can take a while to come up after an update), so
+    /// the user never has to click it. Gives up only after several rounds.
+    private func reconnectRound(roundsLeft: Int) {
+        NSLog("[lidawake] reconnect round (\(roundsLeft) remaining) — reload + poll")
+        helperManager.reload()
+        helperClient.disconnect()
+        pollRound(attemptsLeft: 24, roundsLeft: roundsLeft)   // ~14s per round
+    }
+
+    private func pollRound(attemptsLeft: Int, roundsLeft: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self, self.isRecovering else { return }
             self.helperClient.setDisableSleep(true) { [weak self] err in
@@ -444,11 +454,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 if err.isUnreachable, attemptsLeft > 1 {
                     self.helperClient.disconnect()       // fresh connection each probe
-                    self.pollUntilReadyThenArm(attemptsLeft: attemptsLeft - 1)
+                    self.pollRound(attemptsLeft: attemptsLeft - 1, roundsLeft: roundsLeft)
                     return
                 }
-                // Never came back — show the error state in the SAME window
-                // (retry / open Login Items), never the Welcome window.
+                if err.isUnreachable, roundsLeft > 1 {
+                    self.reconnectRound(roundsLeft: roundsLeft - 1)   // auto "Try Again"
+                    return
+                }
+                // Genuinely not coming back — error state (retry / Login Items), never onboarding.
                 self.isRecovering = false
                 self.refreshItems()
                 if err.isUnreachable { self.preparingWindow.showFailed() }

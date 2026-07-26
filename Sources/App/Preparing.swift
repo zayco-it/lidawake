@@ -34,7 +34,7 @@ struct PreparingView: View {
             } else {
                 ProgressView().controlSize(.large).padding(.vertical, 4)
                 Text("Getting lidawake ready\u{2026}").font(.headline)
-                Text("Just a moment while the background helper starts up.")
+                Text("Reconnecting the background helper — this can take a moment right after an update.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
         }
