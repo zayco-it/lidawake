@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let entitled = license.isEntitled
         approveItem.isHidden = helperEnabled
         toggleItem.state = armed ? .on : .off
-        toggleItem.isEnabled = helperEnabled && entitled
+        toggleItem.isEnabled = helperEnabled && entitled && !isRecovering
 
         // Trial / buy line — only while unlicensed.
         switch license.status {
@@ -171,7 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         // Status line.
-        if !helperEnabled {
+        if isRecovering {
+            statusLineItem.title = "Reconnecting lidawake\u{2019}s helper\u{2026}"
+        } else if !helperEnabled {
             statusLineItem.title = "Finish the one-time setup to begin"
         } else if !entitled {
             statusLineItem.title = "Your free trial has ended \u{2014} buy to keep using lidawake"
@@ -251,10 +253,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleArmed() {
+        guard !isRecovering else { return }   // busy recovering the helper — ignore clicks
         if armed { disarm() } else { arm() }
     }
 
-    private func arm(recovered: Bool = false) {
+    private func arm() {
         // Paywall gate: no arming once the trial's over and there's no license.
         guard license.isEntitled else { showLicense(); return }
         guard helperManager.state == .enabled else {
@@ -268,20 +271,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helperClient.setDisableSleep(true) { [weak self] err in   // completion on main
             guard let self else { return }
             if let err {
-                if err.isUnreachable {
-                    if recovered { self.helperNotReady() }       // reload already tried — guide the user
-                    else { self.recoverHelperAndRetry() }        // stale post-update daemon: self-heal
-                }
+                if err.isUnreachable { self.recoverHelperAndRetry() }   // stale post-update daemon: self-heal
                 else { self.notify("Couldn\u{2019}t turn on", err.message) }
                 return
             }
-            self.wake.apply(systemAwake: Settings.keepAwakeLidOpen,
-                            screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)  // lid-open assertions
-            self.power.startMonitoring()     // live AC/battery watch
-            self.lid.start()                 // watch for lid close -> sleep display
-            self.armed = true
-            self.refreshItems(); self.updateIcon()
+            self.finishArming()
         }
+    }
+
+    /// Wire up the app side once the helper has accepted disablesleep(true):
+    /// lid-open assertions, live power watch, lid-close watcher, UI. Idempotent
+    /// (its sub-parts guard against double-start), so it's safe to reach here from
+    /// either a normal arm or the recovery probe.
+    private func finishArming() {
+        wake.apply(systemAwake: Settings.keepAwakeLidOpen,
+                   screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
+        power.startMonitoring()
+        lid.start()
+        armed = true
+        refreshItems(); updateIcon()
     }
 
     private func disarm() {
@@ -384,30 +392,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func recoverHelperAndRetry() {
         guard !isRecovering else { return }   // ignore repeat clicks mid-recovery
         isRecovering = true
+        refreshItems()
         NSLog("[lidawake] helper unreachable — reloading daemon registration to recover")
         helperManager.reload()
-        // Wait for the fresh registration to settle to .enabled, THEN retry arming —
-        // so recovery is one silent step. (A fixed delay raced the status settling,
-        // which briefly surfaced the Welcome window and needed a second click.)
-        waitForHelperReadyThenArm(attemptsLeft: 12)   // up to ~6s, polled every 0.5s
+        helperClient.disconnect()             // drop the stale connection to the old helper
+        scheduleRecoveryProbe(attemptsLeft: 16)   // ~10s budget (16 × 0.6s)
     }
 
-    /// Poll until the freshly-reloaded daemon reports `.enabled`, then arm silently.
-    /// Only falls back to guidance if it never comes back within the window.
-    private func waitForHelperReadyThenArm(attemptsLeft: Int) {
-        if helperManager.state == .enabled {
-            isRecovering = false
-            arm(recovered: true)                       // fresh registration -> arms silently
-            return
-        }
-        guard attemptsLeft > 0 else {
-            isRecovering = false
-            if helperManager.state == .requiresApproval { showOnboarding() }  // genuinely needs re-allow
-            else { helperNotReady() }
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.waitForHelperReadyThenArm(attemptsLeft: attemptsLeft - 1)
+    /// After a reload, probe the helper by actually attempting the arm, and arm the
+    /// moment it answers — gating on real REACHABILITY, not registration status
+    /// (`.enabled` can flip on before the mach service is up, which made an earlier
+    /// version arm too early and surface the try-again / Welcome UI). Silent on
+    /// success; only shows the fallback UI if the helper never comes back.
+    private func scheduleRecoveryProbe(attemptsLeft: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, self.isRecovering else { return }
+            if self.helperManager.state == .requiresApproval {   // genuine re-approval (rare)
+                self.isRecovering = false
+                self.refreshItems()
+                self.showOnboarding()
+                return
+            }
+            self.helperClient.setDisableSleep(true) { [weak self] err in
+                guard let self, self.isRecovering else { return }
+                guard let err else {                             // helper answered -> armed
+                    self.isRecovering = false
+                    self.finishArming()
+                    return
+                }
+                if err.isUnreachable, attemptsLeft > 1 {
+                    self.helperClient.disconnect()               // fresh connection next probe
+                    self.scheduleRecoveryProbe(attemptsLeft: attemptsLeft - 1)
+                    return
+                }
+                self.isRecovering = false
+                self.refreshItems()
+                if err.isUnreachable { self.helperNotReady() }
+                else { self.notify("Couldn\u{2019}t turn on", err.message) }
+            }
         }
     }
 
