@@ -14,6 +14,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var armed = false
     private var isRecovering = false   // guards the auto-repair of a stale post-update helper
 
+    /// True once the helper has been genuinely set up (approved) on this Mac.
+    /// Persisted. This is what lets us tell a stale helper after an update ("just
+    /// reconnect") apart from a brand-new install ("first-time setup") — only the
+    /// latter ever shows the Welcome window. Migrated for existing users in
+    /// applicationDidFinishLaunching.
+    private var helperApprovedOnce: Bool {
+        get { UserDefaults.standard.bool(forKey: "helperApprovedOnce") }
+        set { UserDefaults.standard.set(newValue, forKey: "helperApprovedOnce") }
+    }
+
     private let helperManager  = HelperManager()
     private let helperClient   = HelperClient()
     private let wake           = WakeAssertionManager()
@@ -24,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let onboardingWindow = OnboardingWindowController()
     private let license = LicenseController(provider: LicenseConfig.makeProvider())
     private let licenseWindow = LicenseWindowController()
+    private let preparingWindow = PreparingWindowController()
     // Sparkle auto-updater (reads SUFeedURL + SUPublicEDKey from Info.plist).
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -57,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // trial). MUST run before maybeShowOnboarding(), which sets "seenWelcome".
         let usedBefore = UserDefaults.standard.bool(forKey: "seenWelcome")
             || helperManager.state == .enabled
+        if usedBefore { helperApprovedOnce = true }   // returning user: the helper was set up before
         license.bootstrap(usedBefore: usedBefore)
         license.revalidateIfNeeded()
 
@@ -245,11 +257,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Show the Welcome window on the first launch, or whenever the helper still
     /// needs approval — so a new user is always guided to the one setup step.
     private func maybeShowOnboarding() {
-        let seen = UserDefaults.standard.bool(forKey: "seenWelcome")
-        if !seen || helperManager.state != .enabled {
+        // Only a genuine first-time user (helper never approved) gets the Welcome
+        // window. A returning user whose helper is merely stale after an update is
+        // guided by the "Getting ready…" flow when they turn on — never onboarding.
+        if !helperApprovedOnce && helperManager.state != .enabled {
             showOnboarding()
-            UserDefaults.standard.set(true, forKey: "seenWelcome")
         }
+        UserDefaults.standard.set(true, forKey: "seenWelcome")
     }
 
     @objc private func toggleArmed() {
@@ -260,7 +274,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func arm() {
         // Paywall gate: no arming once the trial's over and there's no license.
         guard license.isEntitled else { showLicense(); return }
-        guard helperManager.state == .enabled else {
+        // Genuine first-time setup ONLY (helper never approved on this Mac) → the
+        // friendly Welcome window. A previously-approved helper that's merely
+        // unreachable (stale after an update) must NOT come here — it goes through
+        // the "Getting ready…" recovery instead, so the Welcome window can't reappear.
+        if !helperApprovedOnce && helperManager.state != .enabled {
             _ = helperManager.ensureRegistered()
             showOnboarding()
             return
@@ -271,7 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helperClient.setDisableSleep(true) { [weak self] err in   // completion on main
             guard let self else { return }
             if let err {
-                if err.isUnreachable { self.recoverHelperAndRetry() }   // stale post-update daemon: self-heal
+                if err.isUnreachable { self.prepareAndRecover() }   // stale helper: reconnect + retry
                 else { self.notify("Couldn\u{2019}t turn on", err.message) }
                 return
             }
@@ -284,6 +302,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// (its sub-parts guard against double-start), so it's safe to reach here from
     /// either a normal arm or the recovery probe.
     private func finishArming() {
+        helperApprovedOnce = true    // the helper answered → it's genuinely set up on this Mac
+        preparingWindow.close()      // no-op if it wasn't showing
         wake.apply(systemAwake: Settings.keepAwakeLidOpen,
                    screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
         power.startMonitoring()
@@ -389,65 +409,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// does by hand), give launchd a moment to start the fresh helper, then retry
     /// arming once. Only runs when the helper is genuinely unreachable, so a
     /// healthy install is never touched.
-    private func recoverHelperAndRetry() {
-        guard !isRecovering else { return }   // ignore repeat clicks mid-recovery
+    /// The helper is registered but unreachable — the stale-after-update state.
+    /// Show a "Getting ready…" window, re-register the daemon, then keep probing the
+    /// REAL turn-on until the helper answers (gating on reachability, not the
+    /// registration status, which lies about readiness). Arms and closes the window
+    /// the instant it answers; NEVER shows the Welcome window.
+    private func prepareAndRecover() {
+        guard !isRecovering else { return }
         isRecovering = true
+        preparingWindow.model.onRetry = { [weak self] in self?.preparingWindow.close(); self?.arm() }
+        preparingWindow.model.onOpenLoginItems = { [weak self] in self?.helperManager.openLoginItems() }
+        preparingWindow.model.onCancel = { [weak self] in
+            self?.isRecovering = false
+            self?.preparingWindow.close()
+            self?.refreshItems()
+        }
+        preparingWindow.showPreparing()
         refreshItems()
-        NSLog("[lidawake] helper unreachable — reloading daemon registration to recover")
+        NSLog("[lidawake] helper unreachable — reconnecting (reload + poll)")
         helperManager.reload()
-        helperClient.disconnect()             // drop the stale connection to the old helper
-        scheduleRecoveryProbe(attemptsLeft: 16)   // ~10s budget (16 × 0.6s)
+        helperClient.disconnect()
+        pollUntilReadyThenArm(attemptsLeft: 20)   // ~12s budget (20 × 0.6s)
     }
 
-    /// After a reload, probe the helper by actually attempting the arm, and arm the
-    /// moment it answers — gating on real REACHABILITY, not registration status
-    /// (`.enabled` can flip on before the mach service is up, which made an earlier
-    /// version arm too early and surface the try-again / Welcome UI). Silent on
-    /// success; only shows the fallback UI if the helper never comes back.
-    private func scheduleRecoveryProbe(attemptsLeft: Int) {
+    private func pollUntilReadyThenArm(attemptsLeft: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self, self.isRecovering else { return }
-            if self.helperManager.state == .requiresApproval {   // genuine re-approval (rare)
-                self.isRecovering = false
-                self.refreshItems()
-                self.showOnboarding()
-                return
-            }
             self.helperClient.setDisableSleep(true) { [weak self] err in
                 guard let self, self.isRecovering else { return }
-                guard let err else {                             // helper answered -> armed
+                guard let err else {                     // helper answered -> arm + close the window
                     self.isRecovering = false
                     self.finishArming()
                     return
                 }
                 if err.isUnreachable, attemptsLeft > 1 {
-                    self.helperClient.disconnect()               // fresh connection next probe
-                    self.scheduleRecoveryProbe(attemptsLeft: attemptsLeft - 1)
+                    self.helperClient.disconnect()       // fresh connection each probe
+                    self.pollUntilReadyThenArm(attemptsLeft: attemptsLeft - 1)
                     return
                 }
+                // Never came back — show the error state in the SAME window
+                // (retry / open Login Items), never the Welcome window.
                 self.isRecovering = false
                 self.refreshItems()
-                if err.isUnreachable { self.helperNotReady() }
-                else { self.notify("Couldn\u{2019}t turn on", err.message) }
+                if err.isUnreachable { self.preparingWindow.showFailed() }
+                else { self.preparingWindow.close(); self.notify("Couldn\u{2019}t turn on", err.message) }
             }
-        }
-    }
-
-    /// The helper isn't answering yet even after a reload attempt. Honest message
-    /// + one-click retry; Login Items is the last resort if it genuinely never
-    /// comes up.
-    private func helperNotReady() {
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.messageText = "Just a moment \u{2014} lidawake is starting up"
-        a.informativeText = "Its background helper isn\u{2019}t ready yet. Give it a few seconds, then try again."
-        a.addButton(withTitle: "Try Again")
-        a.addButton(withTitle: "Open Login Items\u{2026}")
-        a.addButton(withTitle: "Cancel")
-        switch a.runModal() {
-        case .alertFirstButtonReturn:  arm()                       // retry once the helper is up
-        case .alertSecondButtonReturn: helperManager.openLoginItems()
-        default: break
         }
     }
 

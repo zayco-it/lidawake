@@ -28,6 +28,7 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/Displays.swift \
           Sources/App/Settings.swift \
           Sources/App/Onboarding.swift \
+          Sources/App/Preparing.swift \
           Sources/App/LicenseProvider.swift \
           Sources/App/LicenseController.swift \
           Sources/App/LicenseWindow.swift"
