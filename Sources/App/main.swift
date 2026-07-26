@@ -321,6 +321,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// closed lid isn't left backlit. The system stays awake; only the panel sleeps.
     private func handleLidClosed() {
         guard armed, Settings.screenOffOnLidClose else { return }
+        // Clamshell: with an external monitor connected, closing the lid means the
+        // user wants to keep using it — never sleep the external. Only sleep the
+        // screen when the built-in panel is the only display (nothing to see behind
+        // a closed lid). Fixes "external monitor goes dark on lid close".
+        if Displays.hasExternal() {
+            NSLog("[lidawake] lid closed with an external display — leaving screens on (clamshell)")
+            return
+        }
         helperClient.sleepDisplayNow { err in
             if let err { NSLog("[lidawake] sleepDisplayNow error: \(err)") }
         }
@@ -393,6 +401,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         a.addButton(withTitle: "Open Settings\u{2026}")
         a.addButton(withTitle: "OK")
         if a.runModal() == .alertFirstButtonReturn { settingsWindow.show() }
+    }
+}
+
+// Single-instance guard: if another copy of lidawake is already running (classic
+// cause: launched once from the mounted DMG and again from /Applications), bow out
+// quietly so the user never ends up with two menu-bar icons. The instance already
+// holding the menu bar keeps running; this later launch just exits.
+if let bundleID = Bundle.main.bundleIdentifier {
+    let mine = NSRunningApplication.current.processIdentifier
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+        .filter { $0.processIdentifier != mine }
+    if !others.isEmpty {
+        NSLog("[lidawake] another instance is already running — exiting this one")
+        exit(0)
     }
 }
 

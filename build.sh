@@ -25,6 +25,7 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/ThermalGuard.swift \
           Sources/App/PowerPolicy.swift \
           Sources/App/LidMonitor.swift \
+          Sources/App/Displays.swift \
           Sources/App/Settings.swift \
           Sources/App/Onboarding.swift \
           Sources/App/LicenseProvider.swift \

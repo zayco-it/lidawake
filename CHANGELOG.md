@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.1] — 2026-07-26
+
+- **Using an external monitor with the lid closed?** Your external screen now stays on. Before, closing the lid could switch it off — now you can shut the lid and keep working on the big screen.
+- Fixed a case where **two lidawake icons** could show up in the menu bar. There's now only ever one.
+
 ## [1.1.0] — 2026-07-04
 
 - **If you already use lidawake, nothing changes — it stays free for you, forever.** Thank you for being an early user.
