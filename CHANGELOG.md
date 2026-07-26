@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.3] — 2026-07-26
+
+- Turning lidawake on right after an update is now seamless — one click, with no stray setup window popping up first.
+
 ## [1.1.2] — 2026-07-26
 
 - Fixed lidawake sometimes not turning on right after an update — the “just a moment, lidawake is starting up” message that wouldn’t clear. It now repairs its background helper on its own, so you never have to visit Login Items to fix it.

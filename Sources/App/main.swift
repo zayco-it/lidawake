@@ -386,12 +386,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         isRecovering = true
         NSLog("[lidawake] helper unreachable — reloading daemon registration to recover")
         helperManager.reload()
-        // arm(recovered:) then handles whatever the reload left behind: re-enabled
-        // -> it arms; needs re-approval -> it opens the setup window.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            guard let self else { return }
-            self.isRecovering = false
-            self.arm(recovered: true)
+        // Wait for the fresh registration to settle to .enabled, THEN retry arming —
+        // so recovery is one silent step. (A fixed delay raced the status settling,
+        // which briefly surfaced the Welcome window and needed a second click.)
+        waitForHelperReadyThenArm(attemptsLeft: 12)   // up to ~6s, polled every 0.5s
+    }
+
+    /// Poll until the freshly-reloaded daemon reports `.enabled`, then arm silently.
+    /// Only falls back to guidance if it never comes back within the window.
+    private func waitForHelperReadyThenArm(attemptsLeft: Int) {
+        if helperManager.state == .enabled {
+            isRecovering = false
+            arm(recovered: true)                       // fresh registration -> arms silently
+            return
+        }
+        guard attemptsLeft > 0 else {
+            isRecovering = false
+            if helperManager.state == .requiresApproval { showOnboarding() }  // genuinely needs re-allow
+            else { helperNotReady() }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.waitForHelperReadyThenArm(attemptsLeft: attemptsLeft - 1)
         }
     }
 
