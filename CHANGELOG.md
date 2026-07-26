@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.2] — 2026-07-26
+
+- Fixed lidawake sometimes not turning on right after an update — the “just a moment, lidawake is starting up” message that wouldn’t clear. It now repairs its background helper on its own, so you never have to visit Login Items to fix it.
+
 ## [1.1.1] — 2026-07-26
 
 - **Using an external monitor with the lid closed?** Your external screen now stays on. Before, closing the lid could switch it off — now you can shut the lid and keep working on the big screen.

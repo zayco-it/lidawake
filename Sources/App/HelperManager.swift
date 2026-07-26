@@ -46,6 +46,27 @@ final class HelperManager {
         }
     }
 
+    /// Force the daemon to reload from the CURRENT app bundle: unregister, then
+    /// register again. After a Sparkle update the swapped bundle leaves the old
+    /// launchd job stale — `status` can still read `.enabled` while the helper's
+    /// mach service is dead and every XPC call fails. Only a fresh registration
+    /// points launchd at the new helper binary. This is the programmatic
+    /// equivalent of toggling lidawake off then on in System Settings ▸ Login
+    /// Items — the manual workaround — so the app can self-heal instead of asking
+    /// the user to do it by hand.
+    @discardableResult
+    func reload() -> State {
+        do { try service.unregister() }
+        catch { NSLog("[lidawake] reload: unregister failed: \(error.localizedDescription)") }
+        do {
+            try service.register()
+            NSLog("[lidawake] reload: re-registered, status=\(service.status.rawValue)")
+        } catch let e as NSError {
+            NSLog("[lidawake] reload: register failed: \(e.localizedDescription) code=\(e.code)")
+        }
+        return state
+    }
+
     func unregister() {
         do { try service.unregister() }
         catch { NSLog("[lidawake] helper unregister failed: \(error)") }

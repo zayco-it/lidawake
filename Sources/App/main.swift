@@ -12,6 +12,7 @@ import Sparkle
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var armed = false
+    private var isRecovering = false   // guards the auto-repair of a stale post-update helper
 
     private let helperManager  = HelperManager()
     private let helperClient   = HelperClient()
@@ -253,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if armed { disarm() } else { arm() }
     }
 
-    private func arm() {
+    private func arm(recovered: Bool = false) {
         // Paywall gate: no arming once the trial's over and there's no license.
         guard license.isEntitled else { showLicense(); return }
         guard helperManager.state == .enabled else {
@@ -267,7 +268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helperClient.setDisableSleep(true) { [weak self] err in   // completion on main
             guard let self else { return }
             if let err {
-                if err.isUnreachable { self.helperNotReady() }
+                if err.isUnreachable {
+                    if recovered { self.helperNotReady() }       // reload already tried — guide the user
+                    else { self.recoverHelperAndRetry() }        // stale post-update daemon: self-heal
+                }
                 else { self.notify("Couldn\u{2019}t turn on", err.message) }
                 return
             }
@@ -371,10 +375,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         a.runModal()
     }
 
-    /// The helper isn't answering yet — almost always because it's still starting
-    /// (it self-restarts via KeepAlive, which can take a few seconds after an
-    /// update or a restart). Honest message + one-click retry; Login Items is the
-    /// last resort if it genuinely never comes up.
+    /// The helper is registered but unreachable — the classic "stale daemon after
+    /// a Sparkle update" state, where `status` still reads `.enabled` but the mach
+    /// service is dead. Re-register the daemon (what a Login Items disable→enable
+    /// does by hand), give launchd a moment to start the fresh helper, then retry
+    /// arming once. Only runs when the helper is genuinely unreachable, so a
+    /// healthy install is never touched.
+    private func recoverHelperAndRetry() {
+        guard !isRecovering else { return }   // ignore repeat clicks mid-recovery
+        isRecovering = true
+        NSLog("[lidawake] helper unreachable — reloading daemon registration to recover")
+        helperManager.reload()
+        // arm(recovered:) then handles whatever the reload left behind: re-enabled
+        // -> it arms; needs re-approval -> it opens the setup window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            self.isRecovering = false
+            self.arm(recovered: true)
+        }
+    }
+
+    /// The helper isn't answering yet even after a reload attempt. Honest message
+    /// + one-click retry; Login Items is the last resort if it genuinely never
+    /// comes up.
     private func helperNotReady() {
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
