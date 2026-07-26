@@ -75,6 +75,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         buildMenu()
         updateIcon()
         maybeShowOnboarding()
+        warmUpHelperIfStale()
+    }
+
+    /// After an update the helper is registered but not yet reachable. If so,
+    /// reconnect it QUIETLY in the background now — no window, no arming — so it's
+    /// already up by the time the user turns lidawake on (no "Getting ready…" wait).
+    /// Purely a head start: it yields the instant the user interacts (see the
+    /// `!armed && !isRecovering` guards), so the click-time path always wins and
+    /// this can never fight it. On a normal launch the helper is reachable and this
+    /// does nothing.
+    private func warmUpHelperIfStale() {
+        guard helperApprovedOnce else { return }
+        helperClient.probeReachable { [weak self] reachable in
+            guard let self, !reachable, !self.armed, !self.isRecovering else { return }
+            NSLog("[lidawake] approved helper unreachable at launch — warming up in the background")
+            self.warmUpRound(roundsLeft: 3)
+        }
+    }
+
+    private func warmUpRound(roundsLeft: Int) {
+        guard !armed, !isRecovering else { return }   // user took over — let the click-time path own it
+        helperManager.reload()
+        helperClient.disconnect()
+        warmUpPoll(attemptsLeft: 24, roundsLeft: roundsLeft)   // ~14s per round
+    }
+
+    private func warmUpPoll(attemptsLeft: Int, roundsLeft: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, !self.armed, !self.isRecovering else { return }
+            self.helperClient.probeReachable { [weak self] reachable in
+                guard let self, !self.armed, !self.isRecovering else { return }
+                if reachable { NSLog("[lidawake] helper warmed up and ready"); return }
+                if attemptsLeft > 1 {
+                    self.helperClient.disconnect()
+                    self.warmUpPoll(attemptsLeft: attemptsLeft - 1, roundsLeft: roundsLeft)
+                } else if roundsLeft > 1 {
+                    self.warmUpRound(roundsLeft: roundsLeft - 1)
+                }
+                // else: give up quietly — the click-time reconnect is the safety net
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -65,6 +65,19 @@ final class HelperClient {
         }
     }
 
+    /// Lightweight read-only reachability check (calls the helper's version probe).
+    /// Sees whether the registered helper is actually up, without changing any
+    /// state — used by the background warm-up after an update. Completion on main:
+    /// true if the helper answered.
+    func probeReachable(completion: @escaping (Bool) -> Void) {
+        let c = activeConnection()
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in
+            DispatchQueue.main.async { completion(false) }
+        } as? LidAwakeHelperProtocol
+        guard let proxy else { completion(false); return }
+        proxy.helperVersion { _ in DispatchQueue.main.async { completion(true) } }
+    }
+
     /// Blocking restore for app termination and safety trips, where async has no
     /// time to run. Uses a dedicated short-lived connection and signals the
     /// semaphore from the XPC queue (never from main), so it cannot deadlock the

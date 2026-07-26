@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.7] — 2026-07-26
+
+- After an update, lidawake now reconnects its background helper the moment it launches, so it’s usually ready the instant you turn it on — no “Getting ready…” wait.
+- Fixed the “Getting ready…” window so its text is no longer cut off.
+
 ## [1.1.6] — 2026-07-26
 
 - After an update, lidawake now reconnects its background helper on its own and waits as long as it needs — so you no longer have to click “Try Again” if the helper takes a little longer to start.

@@ -26,6 +26,7 @@ struct PreparingView: View {
                 Text("lidawake couldn\u{2019}t start its helper").font(.headline)
                 Text("Give it a few seconds and try again. If it keeps happening, switch lidawake off and back on in System Settings \u{203A} Login Items.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Button("Open Login Items\u{2026}") { model.onOpenLoginItems() }
                     Button("Try Again") { model.onRetry() }.keyboardShortcut(.defaultAction)
@@ -34,11 +35,13 @@ struct PreparingView: View {
             } else {
                 ProgressView().controlSize(.large).padding(.vertical, 4)
                 Text("Getting lidawake ready\u{2026}").font(.headline)
-                Text("Reconnecting the background helper — this can take a moment right after an update.")
+                Text("This can take a moment right after an update.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(28).frame(width: 360)
+        .padding(28)
+        .frame(width: 380)
     }
 }
 
@@ -49,6 +52,9 @@ final class PreparingWindowController {
     private func ensureWindow() {
         guard window == nil else { return }
         let host = NSHostingController(rootView: PreparingView(model: model))
+        // Let the window track the SwiftUI content's size, so it fits both the
+        // spinner and (taller) error state without clipping the text.
+        host.sizingOptions = [.preferredContentSize]
         let w = NSWindow(contentViewController: host)
         w.title = "lidawake"
         w.styleMask = [.titled]
