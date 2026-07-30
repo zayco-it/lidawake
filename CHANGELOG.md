@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.8] — 2026-07-30
+
+- Fixed the message when lidawake turns itself off on battery: it now correctly says the battery reached your set level, instead of mistakenly saying you were unplugged from power.
+
 ## [1.1.7] — 2026-07-26
 
 - After an update, lidawake now reconnects its background helper the moment it launches, so it’s usually ready the instant you turn it on — no “Getting ready…” wait.

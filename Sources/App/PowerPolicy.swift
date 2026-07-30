@@ -34,7 +34,7 @@ func readPowerState() -> PowerState {
 /// floor). While armed, a live power-source callback re-checks and trips
 /// `onViolation` on a policy violation (e.g. unplugged when battery isn't allowed).
 final class PowerPolicy {
-    var onViolation: (() -> Void)?   // invoked on the main thread
+    var onViolation: ((String) -> Void)?   // invoked on the main thread; carries the turn-off reason
     private var runLoopSource: CFRunLoopSource?
 
     /// True if it's currently safe to be armed; `reason` explains any refusal.
@@ -50,6 +50,24 @@ final class PowerPolicy {
         return (true, nil)
     }
 
+    /// If it's no longer safe/allowed to stay armed, a short reason phrased for a
+    /// "lidawake turned off because ___" message — distinguishing an unplug from a
+    /// battery-floor trip (they look the same to the monitor but read very
+    /// differently to the user). nil if it's still fine to stay armed.
+    static func disarmReason() -> String? {
+        let s = readPowerState()
+        return disarmReason(onAC: s.isOnAC, percent: s.percent,
+                            allowOnBattery: Settings.allowOnBattery, floor: Settings.batteryFloorPercent)
+    }
+
+    /// Pure decision behind `disarmReason()` — split out so it's unit-testable
+    /// without real hardware. Unplug-when-not-allowed takes precedence over floor.
+    static func disarmReason(onAC: Bool, percent: Int, allowOnBattery: Bool, floor: Int) -> String? {
+        if !allowOnBattery && !onAC { return "it was unplugged from power" }
+        if percent >= 0 && percent < floor { return "the battery reached your \(floor)% limit" }
+        return nil
+    }
+
     /// Begin watching live AC/battery changes; fire `onViolation` on a trip.
     func startMonitoring() {
         guard runLoopSource == nil else { return }
@@ -58,8 +76,7 @@ final class PowerPolicy {
         guard let src = IOPSNotificationCreateRunLoopSource({ raw in
             guard let raw else { return }
             let me = Unmanaged<PowerPolicy>.fromOpaque(raw).takeUnretainedValue()
-            let (ok, _) = PowerPolicy.armingAllowed()
-            if !ok { me.onViolation?() }
+            if let reason = PowerPolicy.disarmReason() { me.onViolation?(reason) }
         }, ctx)?.takeRetainedValue() else { return }
         runLoopSource = src
         CFRunLoopAddSource(CFRunLoopGetMain(), src, .defaultMode)

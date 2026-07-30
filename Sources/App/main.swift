@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
-        power.onViolation  = { [weak self] in self?.autoDisarm("it was unplugged from power") }
+        power.onViolation  = { [weak self] reason in self?.autoDisarm(reason) }
         lid.onLidClosed    = { [weak self] in self?.handleLidClosed() }
         thermal.start()
 
