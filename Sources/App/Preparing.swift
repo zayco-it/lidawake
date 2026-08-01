@@ -10,9 +10,13 @@ import SwiftUI
 
 final class PreparingModel: ObservableObject {
     @Published var failed = false
+    /// The helper can't run because the app isn't installed in Applications —
+    /// retrying is pointless, so we show the real fix instead.
+    @Published var needsMove = false
     var onRetry: () -> Void = {}
     var onOpenLoginItems: () -> Void = {}
     var onCancel: () -> Void = {}
+    var onOpenApplications: () -> Void = {}
 }
 
 struct PreparingView: View {
@@ -22,7 +26,16 @@ struct PreparingView: View {
         VStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 64, height: 64)
-            if model.failed {
+            if model.needsMove {
+                Text("Move lidawake to your Applications folder").font(.headline)
+                Text("lidawake can only start its background helper when it lives in your Applications folder. Quit lidawake, drag it there, then open it again.")
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button("Open Applications Folder") { model.onOpenApplications() }
+                    Button("OK") { model.onCancel() }.keyboardShortcut(.defaultAction)
+                }.padding(.top, 2)
+            } else if model.failed {
                 Text("lidawake couldn\u{2019}t start its helper").font(.headline)
                 Text("Give it a few seconds and try again. If it keeps happening, switch lidawake off and back on in System Settings \u{203A} Login Items.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -35,7 +48,7 @@ struct PreparingView: View {
             } else {
                 ProgressView().controlSize(.large).padding(.vertical, 4)
                 Text("Getting lidawake ready\u{2026}").font(.headline)
-                Text("This can take a moment right after an update.")
+                Text("This usually takes a few seconds.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -66,6 +79,7 @@ final class PreparingWindowController {
     /// Show the spinner ("getting ready") state and bring the window forward.
     func showPreparing() {
         model.failed = false
+        model.needsMove = false
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -73,7 +87,18 @@ final class PreparingWindowController {
 
     /// Switch the window to the error state (retry / open Login Items).
     func showFailed() {
+        model.needsMove = false
         model.failed = true
+        ensureWindow()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The app isn't in Applications, so the helper can never launch — show the
+    /// actual fix rather than a Try Again that cannot succeed.
+    func showFailedNeedsMove() {
+        model.failed = true
+        model.needsMove = true
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

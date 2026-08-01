@@ -48,6 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Settings.registerDefaults()
         installEditMenu()
+
+        // Running straight from the mounted disk image is a common first-run mistake,
+        // and it can never work: macOS won't launch our root helper from /Volumes.
+        // Say so plainly and quit BEFORE registering anything — a daemon registered
+        // from a disk image just leaves a broken record behind.
+        if InstallLocation.isOnDiskImage { showMustInstallAndQuit(); return }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
@@ -420,14 +427,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if armed { helperClient.setDisableSleepSync(false) }   // never leave sleep disabled behind
         wake.release(); power.stopMonitoring(); lid.stop(); armed = false
-        helperManager.unregister()
+        let removed = helperManager.unregister()
         if let domain = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: domain)
         }
         let done = NSAlert()
-        done.messageText = "lidawake removed"
-        done.informativeText = "The background helper is gone and your settings were cleared. Drag lidawake to the Trash to finish. Quitting now\u{2026}"
-        done.runModal()
+        if removed {
+            done.messageText = "lidawake removed"
+            done.informativeText = "The background helper is gone and your settings were cleared. Drag lidawake to the Trash to finish. Quitting now\u{2026}"
+            done.addButton(withTitle: "OK")
+        } else {
+            // Don't claim a clean removal we didn't achieve — macOS can refuse to
+            // drop the registration, and it then lingers in Login Items.
+            done.messageText = "lidawake\u{2019}s settings were cleared"
+            done.informativeText = "Your Mac will sleep normally again, but macOS didn\u{2019}t remove lidawake\u{2019}s background item. You can switch it off in System Settings \u{203A} Login Items.\n\nAfterwards, drag lidawake to the Trash to finish."
+            done.addButton(withTitle: "Open Login Items\u{2026}")
+            done.addButton(withTitle: "OK")
+        }
+        if done.runModal() == .alertFirstButtonReturn && !removed {
+            helperManager.openLoginItems()
+        }
+        NSApp.terminate(nil)
+    }
+
+    /// Shown when lidawake is opened from the disk image instead of being installed.
+    /// Offers to open the Applications folder so the drag is one step away.
+    private func showMustInstallAndQuit() {
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = "Move lidawake to your Applications folder"
+        a.informativeText = "lidawake is running from the disk image, and it can\u{2019}t work from there \u{2014} macOS won\u{2019}t let it start the small background helper it needs.\n\nDrag lidawake into your Applications folder, then open it from there."
+        a.addButton(withTitle: "Open Applications Folder")
+        a.addButton(withTitle: "Quit")
+        if a.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
+        }
         NSApp.terminate(nil)
     }
 
@@ -460,6 +494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         isRecovering = true
         preparingWindow.model.onRetry = { [weak self] in self?.preparingWindow.close(); self?.arm() }
         preparingWindow.model.onOpenLoginItems = { [weak self] in self?.helperManager.openLoginItems() }
+        preparingWindow.model.onOpenApplications = {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
+        }
         preparingWindow.model.onCancel = { [weak self] in
             self?.isRecovering = false
             self?.preparingWindow.close()
@@ -505,7 +542,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Genuinely not coming back — error state (retry / Login Items), never onboarding.
                 self.isRecovering = false
                 self.refreshItems()
-                if err.isUnreachable { self.preparingWindow.showFailed() }
+                // If we're installed somewhere the helper can't legally be launched
+                // from, no amount of retrying will help — name the real cause.
+                if err.isUnreachable, InstallLocation.cannotHostHelper {
+                    self.preparingWindow.showFailedNeedsMove()
+                } else if err.isUnreachable { self.preparingWindow.showFailed() }
                 else { self.preparingWindow.close(); self.notify("Couldn\u{2019}t turn on", err.message) }
             }
         }

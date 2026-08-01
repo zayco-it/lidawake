@@ -67,9 +67,15 @@ final class HelperManager {
         return state
     }
 
-    func unregister() {
-        do { try service.unregister() }
-        catch { NSLog("[lidawake] helper unregister failed: \(error)") }
+    /// Returns false if macOS refused to remove the daemon registration, so callers
+    /// can tell the truth instead of reporting a clean removal that didn't happen.
+    @discardableResult
+    func unregister() -> Bool {
+        do { try service.unregister(); return true }
+        catch {
+            NSLog("[lidawake] helper unregister failed: \(error)")
+            return false
+        }
     }
 
     /// Opens System Settings ▸ Login Items — on a Standard account this is the
