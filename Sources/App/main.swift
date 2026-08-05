@@ -49,11 +49,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Settings.registerDefaults()
         installEditMenu()
 
-        // Running straight from the mounted disk image is a common first-run mistake,
-        // and it can never work: macOS won't launch our root helper from /Volumes.
-        // Say so plainly and quit BEFORE registering anything — a daemon registered
-        // from a disk image just leaves a broken record behind.
-        if InstallLocation.isOnDiskImage { showMustInstallAndQuit(); return }
+        // The helper can only be launched when we live in Applications. Anywhere else
+        // — the mounted disk image, Downloads, a home folder — macOS refuses to spawn
+        // it and lidawake can never work. Say so and quit BEFORE registering anything:
+        // registering from such a path leaves a system-wide daemon record that keeps
+        // pointing there, and clearing it needs an admin BTM reset. Refusing to start
+        // is far kinder than running broken and poisoning the machine.
+        // Present on the next runloop turn: an accessory (LSUIElement) app can't take
+        // focus this early, so an alert shown here flashes and dies — the user would
+        // just see lidawake vanish.
+        if InstallLocation.cannotHostHelper {
+            DispatchQueue.main.async { [weak self] in self?.showMustInstallAndQuit() }
+            return
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -450,19 +458,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
 
-    /// Shown when lidawake is opened from the disk image instead of being installed.
-    /// Offers to open the Applications folder so the drag is one step away.
+    /// Shown when lidawake isn't installed in Applications, so its helper could never
+    /// start. Offers to open the Applications folder so the drag is one step away.
+    /// Shown when lidawake isn't installed in Applications, so its helper could never
+    /// start. Uses the same window as the "Getting ready…" flow rather than an
+    /// NSAlert: an accessory (LSUIElement) app can't reliably bring a modal alert to
+    /// the front at launch — it just bounces in the Dock with nothing readable.
+    /// A real window ordered front works, and is what the rest of the app already uses.
     private func showMustInstallAndQuit() {
-        NSApp.activate(ignoringOtherApps: true)
-        let a = NSAlert()
-        a.messageText = "Move lidawake to your Applications folder"
-        a.informativeText = "lidawake is running from the disk image, and it can\u{2019}t work from there \u{2014} macOS won\u{2019}t let it start the small background helper it needs.\n\nDrag lidawake into your Applications folder, then open it from there."
-        a.addButton(withTitle: "Open Applications Folder")
-        a.addButton(withTitle: "Quit")
-        if a.runModal() == .alertFirstButtonReturn {
+        NSApp.setActivationPolicy(.regular)   // a Dock presence so it can come forward
+        preparingWindow.model.onOpenApplications = {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
         }
-        NSApp.terminate(nil)
+        preparingWindow.model.onCancel = { NSApp.terminate(nil) }
+        preparingWindow.showFailedNeedsMove(onDiskImage: InstallLocation.isOnDiskImage)
     }
 
     @objc private func quit() {

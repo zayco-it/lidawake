@@ -3,6 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.1.9] — 2026-08-06
+
+- lidawake now tells you when it’s in the wrong place. If you open it straight from the disk image — or from anywhere other than your Applications folder — it explains that it can’t start its background helper from there and offers to open Applications for you, instead of getting stuck on “Getting lidawake ready…” forever.
+- Removing lidawake is honest about what happened: if macOS refuses to remove its background item, lidawake now says so and offers to open Login Items, rather than reporting that everything was removed.
+- Clearer wording while lidawake reconnects its helper.
+
 ## [1.1.8] — 2026-07-30
 
 - Fixed the message when lidawake turns itself off on battery: it now correctly says the battery reached your set level, instead of mistakenly saying you were unplugged from power.

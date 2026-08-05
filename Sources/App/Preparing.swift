@@ -13,6 +13,9 @@ final class PreparingModel: ObservableObject {
     /// The helper can't run because the app isn't installed in Applications —
     /// retrying is pointless, so we show the real fix instead.
     @Published var needsMove = false
+    /// Tailors the wording: opened straight from the mounted DMG vs. installed
+    /// somewhere else that can't host the helper.
+    @Published var onDiskImage = false
     var onRetry: () -> Void = {}
     var onOpenLoginItems: () -> Void = {}
     var onCancel: () -> Void = {}
@@ -28,12 +31,14 @@ struct PreparingView: View {
                 .resizable().frame(width: 64, height: 64)
             if model.needsMove {
                 Text("Move lidawake to your Applications folder").font(.headline)
-                Text("lidawake can only start its background helper when it lives in your Applications folder. Quit lidawake, drag it there, then open it again.")
+                Text(model.onDiskImage
+                     ? "lidawake is running from the disk image, and it can\u{2019}t work from there \u{2014} macOS won\u{2019}t let it start the small background helper it needs.\n\nDrag lidawake into your Applications folder, then open it from there."
+                     : "lidawake can only start its background helper when it lives in your Applications folder.\n\nQuit lidawake, move it into Applications, then open it again.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     Button("Open Applications Folder") { model.onOpenApplications() }
-                    Button("OK") { model.onCancel() }.keyboardShortcut(.defaultAction)
+                    Button("Quit") { model.onCancel() }.keyboardShortcut(.defaultAction)
                 }.padding(.top, 2)
             } else if model.failed {
                 Text("lidawake couldn\u{2019}t start its helper").font(.headline)
@@ -96,9 +101,10 @@ final class PreparingWindowController {
 
     /// The app isn't in Applications, so the helper can never launch — show the
     /// actual fix rather than a Try Again that cannot succeed.
-    func showFailedNeedsMove() {
+    func showFailedNeedsMove(onDiskImage: Bool = false) {
         model.failed = true
         model.needsMove = true
+        model.onDiskImage = onDiskImage
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
