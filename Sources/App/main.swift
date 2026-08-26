@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let power          = PowerPolicy()
     private let lid            = LidMonitor()
     private let heartbeat      = Heartbeat()
+    private let notifier       = Notifier()
+    private var wakeSummary    = WakeSummary()
     private let settingsWindow = SettingsWindowController()
     private let onboardingWindow = OnboardingWindowController()
     private let license = LicenseController(provider: LicenseConfig.makeProvider())
@@ -52,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Dynamic menu items, refreshed on every open.
     private var toggleItem: NSMenuItem!
     private var statusLineItem: NSMenuItem!
+    private var noticeItem: NSMenuItem!
     private var licenseItem: NSMenuItem!
     private var approveItem: NSMenuItem!
 
@@ -77,9 +80,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
         power.onViolation  = { [weak self] reason in self?.autoDisarm(reason) }
-        lid.onLidClosed    = { [weak self] in self?.handleLidClosed() }
+        lid.onLidClosed    = { [weak self] in
+            guard let self else { return }
+            // Start the session regardless of the screen-off setting —
+            // handleLidClosed() returns early when it is off, and the summary is
+            // about staying awake, not about the screen.
+            self.wakeSummary.begin(battery: readPowerState().percent)
+            self.thermal.resetPeak()
+            self.handleLidClosed()
+        }
+        lid.onLidOpened    = { [weak self] in self?.postWakeSummary() }
         heartbeat.onBeat   = { [weak self] in self?.sendHeartbeat() }
         thermal.start()
+        notifier.start()
 
         // Apply setting changes LIVE while armed — no disarm/re-arm dance.
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -89,11 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Register the daemon (and surface the approval UI if it isn't enabled yet).
         _ = helperManager.ensureRegistered()
-
-        // Anyone already set up before open-at-login shipped gets it here, rather
-        // than having to arm one more time for it to take. Once only — see
-        // LoginItem.registerOnce().
-        if helperManager.state == .enabled { LoginItem.registerOnce() }
 
         // Decide once: existing free user (grandfathered) vs. new (start the 14-day
         // trial). MUST run before maybeShowOnboarding(), which sets "seenWelcome".
@@ -105,6 +113,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         buildMenu()
         updateIcon()
+
+        // Anyone already set up before open-at-login shipped gets it here, rather
+        // than having to arm one more time for it to take. Once only — see
+        // LoginItem.registerOnce().
+        //
+        // MUST come after buildMenu(): announceLoginItem() calls refreshItems(),
+        // and every menu item is an implicitly-unwrapped NSMenuItem! that does not
+        // exist until buildMenu() runs. Calling it earlier crashes on launch — and
+        // only on this path, the already-set-up one, which no fresh-install test
+        // would ever reach.
+        if helperManager.state == .enabled, LoginItem.registerOnce() { announceLoginItem() }
+
         maybeShowOnboarding()
         warmUpHelperIfStale()
     }
@@ -185,6 +205,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusLineItem.isEnabled = false
         menu.addItem(statusLineItem)
 
+        // One-shot login-item disclosure (T2.2). Same show/hide pattern as
+        // approveItem and licenseItem — not a new surface, the third use of one
+        // the menu already has. Clicking it goes straight to the off switch.
+        noticeItem = NSMenuItem(title: WakeNotice.menuTitle, action: #selector(openLoginItemsFromNotice), keyEquivalent: "")
+        noticeItem.target = self
+        menu.addItem(noticeItem)
+
         // Trial/buy line — clickable to open the buy / enter-key window. Hidden once
         // licensed or grandfathered.
         licenseItem = NSMenuItem(title: "", action: #selector(showLicense), keyEquivalent: "")
@@ -247,10 +274,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Helper status isn't pushed, so refresh whenever the menu opens.
     func menuWillOpen(_ menu: NSMenu) { refreshItems() }
 
+    /// The disclosure was on screen for a whole menu opening — that counts as
+    /// said. Clearing it here also stands the notification down, so the user is
+    /// never told the same thing twice through two channels.
+    func menuDidClose(_ menu: NSMenu) {
+        if WakeNotice.pending && !(noticeItem?.isHidden ?? true) {
+            WakeNotice.markDelivered()
+        }
+    }
+
+    @objc private func openLoginItemsFromNotice() {
+        WakeNotice.markDelivered()
+        refreshItems()
+        helperManager.openLoginItems()
+    }
+
+    /// Raise the login-item disclosure and try the fast channel. The menu item is
+    /// already live by this point (WakeNotice.raise() is synchronous); the
+    /// notification only ever *removes* the need for it.
+    private func announceLoginItem() {
+        WakeNotice.raise()
+        refreshItems()
+        notifier.post(title: WakeNotice.title, body: WakeNotice.body) { [weak self] outcome in
+            switch outcome {
+            case .posted:
+                WakeNotice.markDelivered()
+                self?.refreshItems()
+            case .denied, .failed:
+                // Deliberately nothing: the menu item stays, which is the whole
+                // point of it being the carrier rather than the fallback.
+                break
+            }
+        }
+    }
+
+    /// The lid has been opened after a spell shut with lidawake on (T2.4).
+    private func postWakeSummary() {
+        guard let msg = wakeSummary.finish(battery: readPowerState().percent,
+                                           peakThermal: thermal.peak) else { return }
+        notifier.post(title: msg.title, body: msg.body)
+    }
+
     private func refreshItems() {
         let helperEnabled = (helperManager.state == .enabled)
         let entitled = license.isEntitled
         approveItem.isHidden = helperEnabled
+        noticeItem.isHidden = !WakeNotice.pending
         toggleItem.state = armed ? .on : .off
         toggleItem.isEnabled = helperEnabled && entitled && !isRecovering
 
@@ -387,7 +456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// either a normal arm or the recovery probe.
     private func finishArming() {
         helperApprovedOnce = true    // the helper answered → it's genuinely set up on this Mac
-        LoginItem.registerOnce()     // ...so it's worth coming back after a reboot. Once only.
+        if LoginItem.registerOnce() { announceLoginItem() }   // once only; see WakeNotice
         preparingWindow.close()      // no-op if it wasn't showing
         wake.apply(systemAwake: Settings.keepAwakeLidOpen,
                    screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
@@ -402,6 +471,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// four disarm paths (manual, safety trip, uninstall, quit) and a watcher that
     /// has to be remembered in each of them is a watcher that will be forgotten.
     private func stopArmedWatchers() {
+        // Disarming mid-session cancels the summary rather than reporting it: the
+        // Mac slept from here, so a duration measured to lid-open would be wrong,
+        // and autoDisarm() already says why it stopped.
+        wakeSummary.cancel()
         wake.release()
         power.stopMonitoring()
         lid.stop()

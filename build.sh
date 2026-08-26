@@ -29,6 +29,9 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/Displays.swift \
           Sources/App/InstallLocation.swift \
           Sources/App/LoginItem.swift \
+          Sources/App/Notifier.swift \
+          Sources/App/WakeNotice.swift \
+          Sources/App/WakeSummary.swift \
           Sources/App/Settings.swift \
           Sources/App/Onboarding.swift \
           Sources/App/Preparing.swift \

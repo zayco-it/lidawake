@@ -2,7 +2,7 @@ import Foundation
 import IOKit
 
 /// Watches the laptop lid (clamshell) state while armed and fires `onLidClosed`
-/// on the open→closed edge. We poll once a second by reading IOPMrootDomain's
+/// on the open→closed edge and `onLidOpened` on the closed→open edge. We poll once a second by reading IOPMrootDomain's
 /// `AppleClamshellState` (readable without root) rather than registering an
 /// IOKit interest notification — simpler, no C-callback bridging, and 1 Hz is
 /// negligible. Edge-triggered: each close fires exactly once.
@@ -10,6 +10,7 @@ final class LidMonitor {
     private var timer: Timer?
     private var lastClosed = false
     var onLidClosed: (() -> Void)?   // called on the main thread
+    var onLidOpened: (() -> Void)?   // called on the main thread
 
     func start() {
         guard timer == nil else { return }
@@ -27,7 +28,8 @@ final class LidMonitor {
 
     private func tick() {
         let closed = Self.isLidClosed()
-        if closed && !lastClosed { onLidClosed?() }   // open -> closed edge only
+        if closed && !lastClosed { onLidClosed?() }   // open -> closed edge
+        if !closed && lastClosed { onLidOpened?() }   // closed -> open edge
         lastClosed = closed
     }
 

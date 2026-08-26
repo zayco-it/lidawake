@@ -8,6 +8,13 @@ final class ThermalGuard {
     private var obs: NSObjectProtocol?
     var onOverheat: (() -> Void)?   // invoked on the main thread
 
+    /// Warmest state seen since the last `resetPeak()`. The guard only ever
+    /// reacted to heat; the post-wake summary needs to remember it too.
+    private(set) var peak: ProcessInfo.ThermalState = .nominal
+
+    /// Start a fresh high-water mark, seeded with where we are right now.
+    func resetPeak() { peak = ProcessInfo.processInfo.thermalState }
+
     func start() {
         obs = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
@@ -21,9 +28,11 @@ final class ThermalGuard {
     }
 
     private func evaluate() {
-        switch ProcessInfo.processInfo.thermalState {
+        let now = ProcessInfo.processInfo.thermalState
+        if now.rawValue > peak.rawValue { peak = now }
+        switch now {
         case .serious, .critical:
-            NSLog("[lidawake] thermal \(ProcessInfo.processInfo.thermalState.rawValue) -> auto-disarm")
+            NSLog("[lidawake] thermal \(now.rawValue) -> auto-disarm")
             onOverheat?()
         case .nominal, .fair:
             break

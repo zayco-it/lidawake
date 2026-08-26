@@ -36,9 +36,13 @@ enum LoginItem {
     /// genuinely working on this Mac. Registering at first launch instead would
     /// leave an "Open at Login" entry behind for someone who opened it once,
     /// never finished the one setup step, and dragged it to the Trash.
-    static func registerOnce() {
+    /// Returns true only when THIS call newly registered the app — the one
+    /// moment there is something to tell the user about. Already-registered,
+    /// already-flagged and failed all return false.
+    @discardableResult
+    static func registerOnce() -> Bool {
         let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: didRegisterKey) else { return }
+        guard !defaults.bool(forKey: didRegisterKey) else { return false }
 
         let service = SMAppService.mainApp
 
@@ -46,13 +50,14 @@ enum LoginItem {
         // so we never re-register, and leave their setting alone.
         if service.status == .enabled {
             defaults.set(true, forKey: didRegisterKey)
-            return
+            return false   // it was already on — the user is not learning anything new
         }
 
         do {
             try service.register()
             defaults.set(true, forKey: didRegisterKey)
             NSLog("[lidawake] set to open at login, status=\(service.status.rawValue)")
+            return true
         } catch let e as NSError {
             // Left UNFLAGGED on purpose, so a transient failure is retried on the
             // next launch. This cannot resurrect a setting the user turned off:
@@ -64,6 +69,7 @@ enum LoginItem {
             // someone who was only trying to keep their Mac awake.
             NSLog("[lidawake] open-at-login registration failed: \(e.localizedDescription) code=\(e.code)")
         }
+        return false
     }
 
     /// Drop the "Open at Login" entry. Part of Uninstall — leaving it behind would
