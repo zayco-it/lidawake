@@ -14,6 +14,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var armed = false
     private var isRecovering = false   // guards the auto-repair of a stale post-update helper
 
+    /// Whether the RESIDENT helper implements the hang watchdog. After a Sparkle
+    /// update launchd can still be running the previous helper binary, which doesn't
+    /// export `heartbeat` — and calling a selector the remote doesn't export can
+    /// invalidate the NSXPC connection, which would fire that helper's dead man's
+    /// switch and silently turn lidawake off under the user. So we ask its version
+    /// once per arm and only check in when it's new enough. An older helper simply
+    /// behaves as it always did: no watchdog, no harm.
+    private var helperHasWatchdog = false
+
     /// True once the helper has been genuinely set up (approved) on this Mac.
     /// Persisted. This is what lets us tell a stale helper after an update ("just
     /// reconnect") apart from a brand-new install ("first-time setup") — only the
@@ -30,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let thermal        = ThermalGuard()
     private let power          = PowerPolicy()
     private let lid            = LidMonitor()
+    private let heartbeat      = Heartbeat()
     private let settingsWindow = SettingsWindowController()
     private let onboardingWindow = OnboardingWindowController()
     private let license = LicenseController(provider: LicenseConfig.makeProvider())
@@ -68,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
         power.onViolation  = { [weak self] reason in self?.autoDisarm(reason) }
         lid.onLidClosed    = { [weak self] in self?.handleLidClosed() }
+        heartbeat.onBeat   = { [weak self] in self?.sendHeartbeat() }
         thermal.start()
 
         // Apply setting changes LIVE while armed — no disarm/re-arm dance.
@@ -93,18 +104,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         warmUpHelperIfStale()
     }
 
-    /// After an update the helper is registered but not yet reachable. If so,
-    /// reconnect it QUIETLY in the background now — no window, no arming — so it's
-    /// already up by the time the user turns lidawake on (no "Getting ready…" wait).
-    /// Purely a head start: it yields the instant the user interacts (see the
-    /// `!armed && !isRecovering` guards), so the click-time path always wins and
-    /// this can never fight it. On a normal launch the helper is reachable and this
-    /// does nothing.
+    /// After an update, the helper launchd is actually serving may not be the one
+    /// this bundle ships. Two cases, both repaired the same way:
+    ///
+    ///  - **unreachable** — the classic stale job: registered, mach service dead.
+    ///  - **reachable but OLD** — the bundle was replaced under a running daemon, so
+    ///    launchd keeps serving the previous helper binary until the next reboot.
+    ///    Nothing looks wrong from the outside — arming works normally — which is
+    ///    exactly why this went unnoticed. The app just silently loses every
+    ///    helper-side change in the update, the hang watchdog among them. See
+    ///    `HelperClient.probeCurrent` for the mechanism.
+    ///
+    /// Either way, reconnect QUIETLY in the background now — no window, no arming —
+    /// so the right helper is up by the time the user turns lidawake on (no
+    /// "Getting ready…" wait). Purely a head start: it yields the instant the user
+    /// interacts (see the `!armed && !isRecovering` guards), so the click-time path
+    /// always wins and this can never fight it. If the user does arm first, the
+    /// reload has already killed the old daemon, so that attempt routes through
+    /// `prepareAndRecover()` and lands on the new helper anyway.
     private func warmUpHelperIfStale() {
         guard helperApprovedOnce else { return }
-        helperClient.probeReachable { [weak self] reachable in
-            guard let self, !reachable, !self.armed, !self.isRecovering else { return }
-            NSLog("[lidawake] approved helper unreachable at launch — warming up in the background")
+        helperClient.probeCurrent { [weak self] current in
+            guard let self, !current, !self.armed, !self.isRecovering else { return }
+            NSLog("[lidawake] resident helper missing or older than the bundled \(LidAwakeIDs.helperVersion) — reloading in the background")
             self.warmUpRound(roundsLeft: 3)
         }
     }
@@ -119,9 +141,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func warmUpPoll(attemptsLeft: Int, roundsLeft: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let self, !self.armed, !self.isRecovering else { return }
-            self.helperClient.probeReachable { [weak self] reachable in
+            // Poll for CURRENT, not merely reachable: mid-reload the outgoing helper
+            // can still answer, and treating that as success would land us right back
+            // on the binary we are trying to replace.
+            self.helperClient.probeCurrent { [weak self] current in
                 guard let self, !self.armed, !self.isRecovering else { return }
-                if reachable { NSLog("[lidawake] helper warmed up and ready"); return }
+                if current { NSLog("[lidawake] helper warmed up and ready"); return }
                 if attemptsLeft > 1 {
                     self.helperClient.disconnect()
                     self.warmUpPoll(attemptsLeft: attemptsLeft - 1, roundsLeft: roundsLeft)
@@ -136,9 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // SAFETY: never leave sleep disabled behind us. Synchronous restore.
         if armed { helperClient.setDisableSleepSync(false) }
-        wake.release()
-        power.stopMonitoring()
-        lid.stop()
+        stopArmedWatchers()
         thermal.stop()
     }
 
@@ -366,15 +389,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         lid.start()
         armed = true
         refreshItems(); updateIcon()
+        startWatchdogHeartbeat()
+    }
+
+    /// Everything that only runs while armed, torn down in one place — there are
+    /// four disarm paths (manual, safety trip, uninstall, quit) and a watcher that
+    /// has to be remembered in each of them is a watcher that will be forgotten.
+    private func stopArmedWatchers() {
+        wake.release()
+        power.stopMonitoring()
+        lid.stop()
+        heartbeat.stop()
+    }
+
+    /// Begin checking in with the helper's hang watchdog — but only once we know the
+    /// resident helper actually has one (see `helperHasWatchdog`).
+    private func startWatchdogHeartbeat(retriesLeft: Int = 3) {
+        helperHasWatchdog = false
+        helperClient.helperVersion { [weak self] version in
+            guard let self, self.armed else { return }
+            guard let version else {
+                // Couldn't reach it to ask — usually transient (a connection torn down
+                // mid-reconnect). Worth retrying, because "armed with nobody watching"
+                // is precisely the state this whole feature exists to prevent.
+                guard retriesLeft > 0 else {
+                    NSLog("[lidawake] couldn't reach the helper to ask about its watchdog — not checking in")
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                    guard let self, self.armed else { return }
+                    self.startWatchdogHeartbeat(retriesLeft: retriesLeft - 1)
+                }
+                return
+            }
+            guard lidAwakeVersionAtLeast(version, LidAwakeWatchdog.minHelperVersion) else {
+                NSLog("[lidawake] helper \(version) predates the hang watchdog — not checking in")
+                return
+            }
+            self.helperHasWatchdog = true
+            self.heartbeat.start()
+        }
+    }
+
+    /// One check-in, sent from the main run loop (that's the point — see Heartbeat).
+    /// The reply is the helper's own view of our state: if it says sleep is no longer
+    /// disabled for us, it gave up on us while we were unresponsive and restored it.
+    /// We are then off, whatever the menu says, so reconcile rather than keep showing
+    /// a checked toggle over a Mac that now sleeps normally.
+    private func sendHeartbeat() {
+        guard armed, helperHasWatchdog else { return }
+        helperClient.heartbeat { [weak self] stillDisabled in
+            guard let self, self.armed else { return }
+            guard let stillDisabled else { return }   // unreachable — not a trip
+            guard !stillDisabled else { return }      // normal case: still armed
+            NSLog("[lidawake] helper watchdog restored sleep while we were unresponsive — reconciling to off")
+            self.stopArmedWatchers()
+            self.armed = false
+            self.refreshItems(); self.updateIcon()
+        }
     }
 
     private func disarm() {
         helperClient.setDisableSleep(false) { [weak self] err in
             guard let self else { return }
             if let err { NSLog("[lidawake] disarm error: \(err.message)") }
-            self.wake.release()
-            self.power.stopMonitoring()
-            self.lid.stop()
+            self.stopArmedWatchers()
             self.armed = false
             self.refreshItems(); self.updateIcon()
         }
@@ -385,9 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func autoDisarm(_ why: String) {
         guard armed else { return }
         helperClient.setDisableSleepSync(false)
-        wake.release()
-        power.stopMonitoring()
-        lid.stop()
+        stopArmedWatchers()
         armed = false
         refreshItems(); updateIcon()
         notify("lidawake turned off", "Stopped because \(why).")
@@ -434,7 +511,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard a.runModal() == .alertFirstButtonReturn else { return }
 
         if armed { helperClient.setDisableSleepSync(false) }   // never leave sleep disabled behind
-        wake.release(); power.stopMonitoring(); lid.stop(); armed = false
+        stopArmedWatchers(); armed = false
         let removed = helperManager.unregister()
         if let domain = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: domain)

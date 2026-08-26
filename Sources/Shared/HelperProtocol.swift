@@ -17,6 +17,14 @@ public protocol LidAwakeHelperProtocol {
 
     /// Lightweight liveness/version probe.
     func helperVersion(reply: @escaping (String) -> Void)
+
+    /// Hang-watchdog check-in from the armed client. Must be sent from the app's
+    /// MAIN run loop — see Sources/App/Heartbeat.swift for why that specific
+    /// thread is the only one that proves anything.
+    /// reply: whether the helper still has sleep disabled for this client. `false`
+    /// means the watchdog already gave up on it and restored sleep, so a client
+    /// that was wedged can reconcile instead of going on claiming to be on.
+    func heartbeat(reply: @escaping (Bool) -> Void)
 }
 
 // One source of truth for every identifier. These must stay in lockstep with
@@ -28,7 +36,37 @@ public enum LidAwakeIDs {
     public static let machServiceName = "it.zayco.lidawake.helper"
     public static let helperPlistName = "it.zayco.lidawake.helper.plist"   // note: WITH .plist
     public static let teamID          = "FXNTJBLQ2F"                       // zaYco s. r. o.
-    public static let helperVersion   = "2.1.0"
+    public static let helperVersion   = "2.2.0"
+}
+
+/// Hang-watchdog timings, shared so the two sides can never drift apart.
+///
+/// The gap between them IS the safety margin: six missed check-ins before the
+/// helper acts on its own. That asymmetry is deliberate. A late trip costs a
+/// little extra heat and battery in a window where nothing thermally meaningful
+/// happens. A FALSE trip sleeps the Mac under someone who was mid-something —
+/// dropped session, interrupted build. The margin is bought against the second
+/// one, because it is the failure that would make lidawake the flaky one rather
+/// than the safe one.
+public enum LidAwakeWatchdog {
+    /// App -> helper check-in period, driven by the app's main run loop.
+    public static let heartbeatInterval: TimeInterval = 15
+
+    /// Silence after which the helper restores normal sleep by itself.
+    public static let timeout: TimeInterval = 90
+
+    /// First helper version that implements `heartbeat`. The app checks this before
+    /// sending any: calling a selector the remote doesn't export can INVALIDATE the
+    /// NSXPC connection, which would fire an old helper's dead man's switch and
+    /// silently turn lidawake off. After a Sparkle update the previous helper binary
+    /// can still be the resident one, so this is a live case, not a theoretical one.
+    public static let minHelperVersion = "2.2.0"
+}
+
+/// Dotted-version compare (`.numeric` so 2.10.0 > 2.2.0). True if `version` is at
+/// least `minimum`.
+public func lidAwakeVersionAtLeast(_ version: String, _ minimum: String) -> Bool {
+    version.compare(minimum, options: .numeric) != .orderedAscending
 }
 
 /// A `csreq`-style requirement that pins: an Apple-issued chain, a specific

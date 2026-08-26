@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.2.0] — 2026-08-26
+
+- Safety: if lidawake ever freezes while it’s keeping your Mac awake, its background helper now notices and restores normal sleep on its own. Until now that was only caught if lidawake quit or crashed outright — a frozen-but-still-running lidawake would leave your Mac unable to sleep, with the overheating and battery cut-offs frozen along with it.
+- After an update, lidawake now makes sure it’s really using its new background helper, rather than the one already running from before. Otherwise improvements to the helper wouldn’t reach you until the next time you restarted your Mac.
+
 ## [1.1.9] — 2026-08-06
 
 - lidawake now tells you when it’s in the wrong place. If you open it straight from the disk image — or from anywhere other than your Applications folder — it explains that it can’t start its background helper from there and offers to open Applications for you, instead of getting stuck on “Getting lidawake ready…” forever.

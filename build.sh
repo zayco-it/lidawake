@@ -25,6 +25,7 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/ThermalGuard.swift \
           Sources/App/PowerPolicy.swift \
           Sources/App/LidMonitor.swift \
+          Sources/App/Heartbeat.swift \
           Sources/App/Displays.swift \
           Sources/App/InstallLocation.swift \
           Sources/App/Settings.swift \
@@ -35,7 +36,8 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/LicenseWindow.swift"
 HELPER_SRCS="Sources/Helper/main.swift \
              Sources/Helper/HelperDelegate.swift \
-             Sources/Helper/HelperImplementation.swift"
+             Sources/Helper/HelperImplementation.swift \
+             Sources/Helper/Watchdog.swift"
 
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS"

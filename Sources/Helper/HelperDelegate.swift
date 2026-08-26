@@ -18,13 +18,9 @@ final class HelperDelegate: NSObject, NSXPCListenerDelegate {
         connection.invalidationHandler = {
             // DEAD MAN'S SWITCH: if the client that armed us vanished without a
             // clean disarm (crash / force-kill), restore sleep so a dead app can't
-            // leave the Mac stuck awake. A clean disarm already sets this false.
-            if impl.disableSleepActive {
-                NSLog("[lidawake-helper] client gone while armed — restoring sleep (dead man's switch)")
-                HelperImplementation.runPmset(["-a", "disablesleep", "0"])
-            } else {
-                NSLog("[lidawake-helper] connection invalidated")
-            }
+            // leave the Mac stuck awake — and retire its hang watchdog with it.
+            // Both live in HelperImplementation, which owns the state they act on.
+            impl.clientGone()
         }
         connection.interruptionHandler = { NSLog("[lidawake-helper] connection interrupted") }
         connection.resume()

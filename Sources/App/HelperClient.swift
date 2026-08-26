@@ -65,17 +65,53 @@ final class HelperClient {
         }
     }
 
-    /// Lightweight read-only reachability check (calls the helper's version probe).
-    /// Sees whether the registered helper is actually up, without changing any
-    /// state — used by the background warm-up after an update. Completion on main:
-    /// true if the helper answered.
-    func probeReachable(completion: @escaping (Bool) -> Void) {
+    /// Read-only check that the RUNNING helper is both reachable AND at least as new
+    /// as the one inside this app bundle. Changes no state; used by the background
+    /// warm-up after an update. Completion on main.
+    ///
+    /// Reachability alone is the wrong question, and that distinction is
+    /// load-bearing. Replacing the app bundle does NOT disturb an already-running
+    /// LaunchDaemon: launchd's job is untouched and the old helper process keeps its
+    /// already-mapped image, so it goes on answering XPC — with a live mach service —
+    /// until the machine reboots. Its signature still satisfies our `csreq`, because
+    /// that pins team and identifier but deliberately not version. An updated app
+    /// therefore keeps talking to the PREVIOUS helper binary indefinitely, and every
+    /// helper-side change in the update silently never takes effect.
+    ///
+    /// Observed 2026-08-26 on a real in-place install: bundle replaced at 12:06, the
+    /// daemon serving it had been up since 19:51 the day before and stayed up.
+    func probeCurrent(completion: @escaping (Bool) -> Void) {
+        helperVersion { version in          // already completes on main
+            guard let version else { completion(false); return }
+            completion(lidAwakeVersionAtLeast(version, LidAwakeIDs.helperVersion))
+        }
+    }
+
+    /// Reads the RUNNING helper's version (which is not necessarily the one in this
+    /// bundle — after an update launchd can still be running the previous binary).
+    /// Completion on main; nil if it couldn't be reached.
+    func helperVersion(completion: @escaping (String?) -> Void) {
         let c = activeConnection()
         let proxy = c.remoteObjectProxyWithErrorHandler { _ in
-            DispatchQueue.main.async { completion(false) }
+            DispatchQueue.main.async { completion(nil) }
         } as? LidAwakeHelperProtocol
-        guard let proxy else { completion(false); return }
-        proxy.helperVersion { _ in DispatchQueue.main.async { completion(true) } }
+        guard let proxy else { completion(nil); return }
+        proxy.helperVersion { v in DispatchQueue.main.async { completion(v) } }
+    }
+
+    /// Hang-watchdog check-in. Completion on main:
+    ///   true  == the helper still has sleep disabled for us (the normal case)
+    ///   false == it gave up on us and restored sleep; we are not on any more
+    ///   nil   == the call didn't get through (helper down, mid-reconnect). That is
+    ///            NOT a trip and must never be treated as one — an unreachable
+    ///            helper is a helper that isn't holding sleep disabled either.
+    func heartbeat(completion: @escaping (Bool?) -> Void) {
+        let c = activeConnection()
+        let proxy = c.remoteObjectProxyWithErrorHandler { _ in
+            DispatchQueue.main.async { completion(nil) }
+        } as? LidAwakeHelperProtocol
+        guard let proxy else { completion(nil); return }
+        proxy.heartbeat { active in DispatchQueue.main.async { completion(active) } }
     }
 
     /// Blocking restore for app termination and safety trips, where async has no
