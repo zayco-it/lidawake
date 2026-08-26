@@ -90,6 +90,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Register the daemon (and surface the approval UI if it isn't enabled yet).
         _ = helperManager.ensureRegistered()
 
+        // Anyone already set up before open-at-login shipped gets it here, rather
+        // than having to arm one more time for it to take. Once only — see
+        // LoginItem.registerOnce().
+        if helperManager.state == .enabled { LoginItem.registerOnce() }
+
         // Decide once: existing free user (grandfathered) vs. new (start the 14-day
         // trial). MUST run before maybeShowOnboarding(), which sets "seenWelcome".
         let usedBefore = UserDefaults.standard.bool(forKey: "seenWelcome")
@@ -382,6 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// either a normal arm or the recovery probe.
     private func finishArming() {
         helperApprovedOnce = true    // the helper answered → it's genuinely set up on this Mac
+        LoginItem.registerOnce()     // ...so it's worth coming back after a reboot. Once only.
         preparingWindow.close()      // no-op if it wasn't showing
         wake.apply(systemAwake: Settings.keepAwakeLidOpen,
                    screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
@@ -512,7 +518,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if armed { helperClient.setDisableSleepSync(false) }   // never leave sleep disabled behind
         stopArmedWatchers(); armed = false
-        let removed = helperManager.unregister()
+        let helperRemoved = helperManager.unregister()
+        let loginItemRemoved = LoginItem.unregister()
+        let removed = helperRemoved && loginItemRemoved
         if let domain = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: domain)
         }

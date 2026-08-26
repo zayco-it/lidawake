@@ -42,7 +42,7 @@ struct PreparingView: View {
                 }.padding(.top, 2)
             } else if model.failed {
                 Text("lidawake couldn\u{2019}t start its helper").font(.headline)
-                Text("Give it a few seconds and try again. If it keeps happening, switch lidawake off and back on in System Settings \u{203A} Login Items.")
+                Text("Give it a few seconds and try again. If it keeps happening, switch lidawake\u{2019}s background item off and back on in System Settings \u{203A} Login Items \u{2014} that\u{2019}s the one listed as running in the background, not \u{201C}Open at Login\u{201D}.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {

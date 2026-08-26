@@ -41,6 +41,10 @@ built to be careful:
   sleep on its own authority. That case matters most, because the thermal and
   battery guards run inside the app and a frozen app freezes them too.
 - **Turns the screen off** when you close the lid.
+- **Comes back after a reboot** — lidawake adds itself to Login Items once, the
+  first time it's working, so a restart doesn't quietly leave your Mac sleeping
+  on lid close again. Switch it off in System Settings whenever you like; it is
+  registered once and never re-registered behind your back.
 
 ## Requirements
 
