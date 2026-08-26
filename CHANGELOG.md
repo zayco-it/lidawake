@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.3.0] — 2026-08-26
+
+- lidawake now opens when you log in, so it keeps working after you restart your Mac. Until now it quietly stopped at every restart and nothing on screen explained why — your Mac just went back to sleeping the moment you closed the lid. It tells you once when it sets this up, and you can switch it off whenever you like in System Settings › General › Login Items.
+- Open the lid and lidawake now tells you what happened while it was shut: how long your Mac stayed awake, whether it got warm, and what the battery did. These tools are invisible by nature, and this is the first time lidawake shows you it actually did its job.
+
 ## [1.2.0] — 2026-08-26
 
 - Safety: if lidawake ever freezes while it’s keeping your Mac awake, its background helper now notices and restores normal sleep on its own. Until now that was only caught if lidawake quit or crashed outright — a frozen-but-still-running lidawake would leave your Mac unable to sleep, with the overheating and battery cut-offs frozen along with it.
