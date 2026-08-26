@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let heartbeat      = Heartbeat()
     private let notifier       = Notifier()
     private var wakeSummary    = WakeSummary()
+    private let idleWatcher    = IdleWatcher()
     private let settingsWindow = SettingsWindowController()
     private let onboardingWindow = OnboardingWindowController()
     private let license = LicenseController(provider: LicenseConfig.makeProvider())
@@ -87,9 +88,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // about staying awake, not about the screen.
             self.wakeSummary.begin(battery: readPowerState().percent)
             self.thermal.resetPeak()
+            self.idleWatcher.start()   // T2.5 — only ever while the lid is shut
             self.handleLidClosed()
         }
-        lid.onLidOpened    = { [weak self] in self?.postWakeSummary() }
+        lid.onLidOpened    = { [weak self] in
+            self?.idleWatcher.stop()
+            self?.postWakeSummary()
+        }
+        idleWatcher.onIdle = { [weak self] in self?.autoSleepIdle() }
         heartbeat.onBeat   = { [weak self] in self?.sendHeartbeat() }
         thermal.start()
         notifier.start()
@@ -475,6 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Mac slept from here, so a duration measured to lid-open would be wrong,
         // and autoDisarm() already says why it stopped.
         wakeSummary.cancel()
+        idleWatcher.stop()
         wake.release()
         power.stopMonitoring()
         lid.stop()
@@ -540,6 +547,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Triggered by the safety guards (thermal/power). Restore immediately with a
     /// synchronous call — no async wait — then update UI.
+    /// T2.5 — nothing has happened for the whole window, so stop holding the Mac
+    /// awake and let it sleep normally.
+    ///
+    /// Does NOT go through autoDisarm(), which ends in notify() — an NSAlert that
+    /// activates the app and blocks on runModal(). The entire premise of this
+    /// feature is that the user is not there, so a modal would sit unanswered,
+    /// holding the main thread, until they came back. A notification waits in
+    /// Notification Center instead and is there when they return.
+    ///
+    /// Saying something is not optional. Turning lidawake off silently and
+    /// leaving the user to find it off is precisely the surprise T2.2 exists to
+    /// avoid — and worse here, because they would reasonably assume it failed.
+    private func autoSleepIdle() {
+        guard armed else { return }
+        helperClient.setDisableSleepSync(false)
+        stopArmedWatchers()
+        armed = false
+        refreshItems(); updateIcon()
+        notifier.post(title: "lidawake turned itself off",
+                      body: "Nothing had been happening for 30 minutes, so your Mac is free to sleep normally again. Switch it back on any time from the menu bar.")
+    }
+
     private func autoDisarm(_ why: String) {
         guard armed else { return }
         helperClient.setDisableSleepSync(false)

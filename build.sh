@@ -26,6 +26,7 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/PowerPolicy.swift \
           Sources/App/LidMonitor.swift \
           Sources/App/Heartbeat.swift \
+          Sources/App/IdleWatcher.swift \
           Sources/App/Displays.swift \
           Sources/App/InstallLocation.swift \
           Sources/App/LoginItem.swift \
