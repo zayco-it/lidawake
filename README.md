@@ -15,8 +15,16 @@ lidawake installs a small privileged helper that does exactly one thing: toggles
 macOS's documented `pmset disablesleep` setting. That is the only supported way to
 keep a Mac awake with the lid closed.
 
-- **No network.** It never phones home (except Sparkle, and only when you check for updates).
-- **No data collection.** No analytics, no tracking — nothing leaves your Mac.
+- **No account, no tracking.** No analytics, no telemetry, no crash reporter, and
+  nothing to sign up for.
+- **Two outbound calls, and only two.** Activating a license key checks it with
+  Freemius, our payment provider — that sends the key, a per-Mac identifier
+  (`IOPlatformUUID`, not your serial number) and the Mac's name, then re-checks at
+  most once every seven days and keeps working offline if it can't reach them
+  ([`LicenseProvider.swift`](Sources/App/LicenseProvider.swift)). Separately,
+  Sparkle asks `zayco.it` whether a newer version exists, and asks you before
+  installing one. That is everything: the **privileged helper has no network code
+  at all**, and during the 14-day trial there is no license check either.
 - **Open source.** The helper runs as administrator, so you can read every line of
   exactly what it does — right here.
 
@@ -27,8 +35,11 @@ built to be careful:
 
 - **Off by default on battery** — opt-in, with a warning, since lid-closed-on-battery runs warm.
 - **Thermal cutoff** — if the Mac gets too hot, it disarms automatically.
-- **Always restores sleep** — on quit, crash, or power loss your Mac goes back to
-  sleeping normally. It can never strand your Mac awake.
+- **Always restores sleep** — on quit, crash, power loss, or if lidawake itself
+  freezes while armed. The helper keeps its own watchdog: the app checks in every
+  15 seconds, and if check-ins stop for 90 seconds the helper restores normal
+  sleep on its own authority. That case matters most, because the thermal and
+  battery guards run inside the app and a frozen app freezes them too.
 - **Turns the screen off** when you close the lid.
 
 ## Requirements
@@ -41,7 +52,8 @@ built to be careful:
 lidawake's code is MIT — read it, and build it yourself for free (see
 [Build from source](#build-from-source)). The **notarized, ready-to-run app** on
 **[zayco.it/lidawake](https://zayco.it/lidawake)** is a small paid product: a **14-day free
-trial**, then a **one-time $6.67** (works on up to 3 Macs). If you used lidawake before it
+trial** that runs in the app itself — no account, no sign-up, no card details — then a
+**one-time $19** for one Mac, or **$29** for up to three. If you used lidawake before it
 became paid, it stays free for you — forever.
 
 **Why pay for something open source?** Not for a secret — the trick (`pmset disablesleep`) is
