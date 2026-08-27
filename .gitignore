@@ -13,3 +13,9 @@ PLAN.md
 docs/
 
 .DS_Store
+
+# Design: the GENERATOR is committed, the rendered sheets are not — they are
+# derived output, regenerable in one command, and would churn the diff. The
+# source is kept precisely because the current icon's own header refers to
+# "concept 3" and concepts 1 and 2 exist nowhere.
+design/*.png
