@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.0] — 2026-08-27
+
+- lidawake now switches itself off when it isn't needed. If your Mac has been sitting with the lid closed and nothing has actually been happening for half an hour — no work, no downloads — it stops holding your Mac awake and lets it sleep normally, then tells you it did. You no longer have to remember to switch it off.
+
 ## [1.3.0] — 2026-08-26
 
 - lidawake now opens when you log in, so it keeps working after you restart your Mac. Until now it quietly stopped at every restart and nothing on screen explained why — your Mac just went back to sleeping the moment you closed the lid. It tells you once when it sets this up, and you can switch it off whenever you like in System Settings › General › Login Items.

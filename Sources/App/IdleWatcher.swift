@@ -63,6 +63,9 @@ struct ActivityWindow {
     mutating func reset() { cores.removeAll(); kbps.removeAll() }
 
     var isFull: Bool { cores.count >= capacity }
+    var count: Int { cores.count }
+    var averageCores: Double { cores.isEmpty ? 0 : cores.reduce(0, +) / Double(cores.count) }
+    var averageKBps: Double { kbps.isEmpty ? 0 : kbps.reduce(0, +) / Double(kbps.count) }
 
     /// Averaged over the whole window, NOT "every sample was quiet".
     ///
@@ -74,9 +77,7 @@ struct ActivityWindow {
     /// stops.
     var isQuiet: Bool {
         guard isFull, !cores.isEmpty else { return false }
-        let avgCores = cores.reduce(0, +) / Double(cores.count)
-        let avgKBps  = kbps.reduce(0, +) / Double(kbps.count)
-        return avgCores < Self.busyCores && avgKBps < Self.busyKBps
+        return averageCores < Self.busyCores && averageKBps < Self.busyKBps
     }
 }
 
@@ -118,6 +119,7 @@ final class IdleWatcher {
         lastCPU = Self.cpuTicks()
         lastNetBytes = Self.netBytes()
         fired = false
+        NSLog("[lidawake] idle watch started — window \(Int(Self.window))s, sampling every \(Int(Self.sampleInterval))s")
         let t = Timer(timeInterval: Self.sampleInterval, repeats: true) { [weak self] _ in self?.tick() }
         // .common so menu tracking and modal panels don't stall sampling — the
         // same reason the heartbeat uses it.
@@ -126,6 +128,7 @@ final class IdleWatcher {
     }
 
     func stop() {
+        if timer != nil { NSLog("[lidawake] idle watch stopped") }
         timer?.invalidate(); timer = nil
         win.reset(); lastCPU = nil; lastNetBytes = nil; fired = false
     }
@@ -147,6 +150,18 @@ final class IdleWatcher {
         let kbps = Double(nowNet - prevNet) / Self.sampleInterval / 1024.0
 
         win.add(cores: cores, kbps: kbps)
+
+        // Per-sample diagnostics, only when the test hook is set. Without these,
+        // "the average stayed above the threshold" and "the timer never ran" are
+        // indistinguishable from outside — both look like nothing happening.
+        // Off in shipped builds: two lines a minute, forever, for a decision
+        // that is taken at most once every 30 minutes.
+        if ProcessInfo.processInfo.environment["LIDAWAKE_IDLE_SECONDS"] != nil {
+            NSLog(String(format: "[lidawake] idle sample cores=%.2f kbps=%.1f  avg cores=%.2f kbps=%.1f  %d/%d  quiet=%@",
+                         cores, kbps, win.averageCores, win.averageKBps,
+                         win.count, win.capacity, win.isQuiet ? "YES" : "no"))
+        }
+
         guard win.isQuiet else { return }
         fired = true
         NSLog("[lidawake] nothing happening for \(Int(Self.window / 60)) min — restoring normal sleep")

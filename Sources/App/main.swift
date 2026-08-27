@@ -565,8 +565,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         stopArmedWatchers()
         armed = false
         refreshItems(); updateIcon()
+        // Derived, not typed. A hard-coded "30 minutes" here would quietly become
+        // a lie the moment IdleWatcher.window changed — and it already reads
+        // wrong under LIDAWAKE_IDLE_SECONDS, which is how this was noticed.
+        let minutes = max(1, Int(IdleWatcher.window / 60))
         notifier.post(title: "lidawake turned itself off",
-                      body: "Nothing had been happening for 30 minutes, so your Mac is free to sleep normally again. Switch it back on any time from the menu bar.")
+                      body: "Nothing had been happening for \(minutes) minutes, so your Mac is free to sleep normally again. Switch it back on any time from the menu bar.")
     }
 
     private func autoDisarm(_ why: String) {
