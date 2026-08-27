@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.1] — 2026-08-27
+
+- New icon. lidawake now shows a closed laptop with its light on — which is what the app actually does. The old one drew an open laptop with a lit screen, the opposite, and it dissolved into an unreadable blob at small sizes.
+- The menu-bar icon is lidawake's own mark now, instead of a stock macOS symbol, and it tells you at a glance whether lidawake is on: the light above the lid is lit when it's keeping your Mac awake. It follows your menu bar in light mode, dark mode and with a tinted background, which the old one didn't.
+
 ## [1.4.0] — 2026-08-27
 
 - lidawake now switches itself off when it isn't needed. If your Mac has been sitting with the lid closed and nothing has actually been happening for half an hour — no work, no downloads — it stops holding your Mac awake and lets it sleep normally, then tells you it did. You no longer have to remember to switch it off.

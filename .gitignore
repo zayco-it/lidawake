@@ -19,5 +19,5 @@ docs/
 # source is kept precisely because the current icon's own header refers to
 # "concept 3" and concepts 1 and 2 exist nowhere.
 design/*.png
-design/iconset/
+design/lidawake.iconset/
 design/menubar-template/

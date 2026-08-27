@@ -74,10 +74,14 @@ func markPaths(_ S: CGFloat) -> (body: CGPath, lip: CGPath, light: CGRect) {
 /// laptop-identifying detail available, and it is why this reads as a device.
 func iconPaths(_ S: CGFloat) -> (lid: CGPath, base: CGPath, light: CGRect) {
     let w = 0.84*S, x = (S - w)/2
-    let seam = 0.016*S
-    let baseH = 0.085*S, baseY = 0.285*S
-    return (rr(x, baseY + baseH + seam, w, 0.215*S, 0.055*S),
-            rr(x + 0.012*S, baseY, w - 0.024*S, baseH, 0.035*S),
+    // Corner radius tightened from 0.055 to 0.030: at 1024 the generous radius
+    // read pill-like rather than like a device. Base tightened to match.
+    // Seam widened from 0.016 to 0.028 — it is the one detail that says
+    // "closed laptop" and it was barely visible at 1024, gone below 128.
+    let seam = 0.028*S
+    let baseH = 0.080*S, baseY = 0.280*S
+    return (rr(x, baseY + baseH + seam, w, 0.215*S, 0.030*S),
+            rr(x + 0.012*S, baseY, w - 0.024*S, baseH, 0.020*S),
             CGRect(x: S/2 - 0.065*S, y: 0.685*S, width: 0.13*S, height: 0.13*S))
 }
 
@@ -119,8 +123,10 @@ func drawAppIcon(_ c: CGContext, _ S: CGFloat, compact: Bool) {
         c.addEllipse(in: CGRect(x: g/2 - 0.11*g, y: 0.64*g, width: 0.22*g, height: 0.22*g)); c.fillPath()
     } else {
         c.saveGState()                                  // contact shadow under the lip
-        c.setShadow(offset: CGSize(width: 0, height: -0.012*g), blur: 0.05*g,
-                    color: rgb(20, 28, 45, 0.28))
+        // Shadow kept shallow and offset UP-free: a downward shadow lands in the
+        // seam and closes the very gap that identifies the object.
+        c.setShadow(offset: CGSize(width: 0, height: 0.004*g), blur: 0.030*g,
+                    color: rgb(20, 28, 45, 0.22))
         c.setFillColor(graphite); c.addPath(lid); c.fillPath()
         c.restoreGState()
         c.saveGState(); c.addPath(lid); c.clip()     // lid top face catching light
@@ -166,7 +172,9 @@ let out = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arg
 try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
 // 1. iconset + preview + the 512 the site needs, all from this one draw call.
-let setDir = out.appendingPathComponent("iconset")
+// MUST end in .iconset — iconutil rejects the directory otherwise, with a
+// bare "Invalid Iconset." that says nothing about the reason.
+let setDir = out.appendingPathComponent("lidawake.iconset")
 try? FileManager.default.createDirectory(at: setDir, withIntermediateDirectories: true)
 for (n, px) in [("icon_16x16.png",16),("icon_16x16@2x.png",32),("icon_32x32.png",32),("icon_32x32@2x.png",64),
                 ("icon_128x128.png",128),("icon_128x128@2x.png",256),("icon_256x256.png",256),
@@ -220,4 +228,4 @@ for (name, armed) in [("lidawake-menubar", false), ("lidawake-menubar-on", true)
     png(glyph(32, armed: armed), tpl.appendingPathComponent("\(name)@2x.png"))
 }
 
-print("wrote app-preview.png, app-strip.png, menubar.png, site-icon-512.png, iconset/, menubar-template/")
+print("wrote app-preview.png, app-strip.png, menubar.png, site-icon-512.png, lidawake.iconset/, menubar-template/")

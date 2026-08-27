@@ -15,7 +15,7 @@ swiftc -O design/icon.swift -o /tmp/lidawake-icon -framework AppKit
 /tmp/lidawake-icon design
 
 echo "== app icon =="
-iconutil -c icns design/iconset -o Resources/lidawake.icns
+iconutil -c icns design/lidawake.iconset -o Resources/lidawake.icns
 
 echo "== menu-bar template assets =="
 mkdir -p Resources/MenuBar
