@@ -357,21 +357,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         guard let button = statusItem.button else { return }
-        // Our own mark, not Apple's `laptopcomputer` symbol. The menu bar is the
-        // surface users see essentially all the time, and it used to carry
-        // someone else's icon. Both states come from design/icon.swift, the same
-        // generator as the app icon, so the two cannot drift apart.
-        //
-        // The states differ by SHAPE — the light above the lid — not by colour,
-        // so the image stays a template in both. The old code switched template
-        // off when armed in order to paint it brand blue, which is why it looked
-        // wrong on a tinted menu bar and ignored the user's accent colour.
-        let name = armed ? "lidawake-menubar-on" : "lidawake-menubar"
-        let img = NSImage(named: name)
-        img?.isTemplate = true
-        img?.accessibilityDescription = armed ? "lidawake, on" : "lidawake, off"
-        button.image = img
-        button.toolTip = armed ? "lidawake — keeping your Mac awake" : "lidawake — off"
+        let base = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "lidawake")
+        if armed {
+            // brand-blue laptop = actively keeping awake
+            let blue = NSColor(srgbRed: 90/255.0, green: 170/255.0, blue: 1.0, alpha: 1)
+            let img = base?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [blue]))
+            img?.isTemplate = false
+            button.image = img
+        } else {
+            base?.isTemplate = true        // monochrome, adapts to the menu bar
+            button.image = base
+        }
     }
 
     // MARK: - Actions

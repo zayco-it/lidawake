@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.2] — 2026-08-27
+
+- Reverted the icon introduced in 1.4.1. In a real menu bar you couldn't tell at a glance whether lidawake was on or off — the two states looked almost the same unless you saw them side by side, which never happens. The previous icon is back, where the menu-bar symbol turns blue while lidawake is keeping your Mac awake.
+
 ## [1.4.1] — 2026-08-27
 
 - New icon. lidawake now shows a closed laptop with its light on — which is what the app actually does. The old one drew an open laptop with a lit screen, the opposite, and it dissolved into an unreadable blob at small sizes.

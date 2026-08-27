@@ -1,9 +1,16 @@
-// lidawake app icon — final generator (concept 3: flat laptop, screen lit).
-// Writes the full .iconset (caller runs iconutil), a 1024 preview, and a
-// small-size legibility strip.
+// lidawake app icon — the generator (concept 3: flat laptop, screen lit).
+// Writes the full .iconset (caller runs iconutil), a 1024 preview, a small-size
+// legibility strip, and the 512 PNG the website uses.
 //
-//   swiftc -O icon-final.swift -o icon-final -framework AppKit
-//   ./icon-final <iconset-dir> <preview.png> <strip.png>
+//   swiftc -O tools/make-icon.swift -o make-icon -framework AppKit
+//   ./make-icon <iconset-dir> <preview.png> <strip.png> [site-icon.png]
+//
+// THE SITE PNG COMES FROM HERE ON PURPOSE. It used to be a separate hand-export
+// and had already drifted from the .icns — different bytes, nothing to catch it,
+// and it is the favicon, the nav mark and the JSON-LD logo on both product
+// pages. One generator means they cannot diverge again. Kept from the abandoned
+// 1.4.1 icon work, which is the only part of it that was independent of the
+// artwork; see design/ for the rest.
 
 import AppKit
 import CoreGraphics
@@ -83,6 +90,8 @@ let entries: [(String, Int)] = [
     ("icon_256x256@2x.png",512),("icon_512x512.png",512),("icon_512x512@2x.png",1024)]
 for (n, px) in entries { writePNG(iconImage(px), setDir.appendingPathComponent(n)) }
 writePNG(iconImage(1024), URL(fileURLWithPath: a[2]))
+// 512 for the website — same draw call as the .icns, so they cannot drift.
+if a.count >= 5 { writePNG(iconImage(512), URL(fileURLWithPath: a[4])) }
 
 // legibility strip: actual-size renders on a split light/dark background
 let sizes = [256, 128, 64, 32, 16], gap = 40
