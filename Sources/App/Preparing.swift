@@ -16,10 +16,16 @@ final class PreparingModel: ObservableObject {
     /// Tailors the wording: opened straight from the mounted DMG vs. installed
     /// somewhere else that can't host the helper.
     @Published var onDiskImage = false
+    /// A different copy of lidawake already holds the menu bar. This launch is
+    /// bowing out — but it says so rather than vanishing, which is issue #1.
+    @Published var duplicate = false
+    /// Where that other copy lives. nil when macOS wouldn't tell us.
+    @Published var otherPath: String?
     var onRetry: () -> Void = {}
     var onOpenLoginItems: () -> Void = {}
     var onCancel: () -> Void = {}
     var onOpenApplications: () -> Void = {}
+    var onRevealOther: () -> Void = {}
 }
 
 struct PreparingView: View {
@@ -29,7 +35,18 @@ struct PreparingView: View {
         VStack(spacing: 14) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 64, height: 64)
-            if model.needsMove {
+            if model.duplicate {
+                Text("lidawake is already running").font(.headline)
+                Text(duplicateBody)
+                    .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    if model.otherPath != nil {
+                        Button("Show Me Where") { model.onRevealOther() }
+                    }
+                    Button("OK") { model.onCancel() }.keyboardShortcut(.defaultAction)
+                }.padding(.top, 2)
+            } else if model.needsMove {
                 Text("Move lidawake to your Applications folder").font(.headline)
                 Text(model.onDiskImage
                      ? "lidawake is running from the disk image, and it can\u{2019}t work from there \u{2014} macOS won\u{2019}t let it start the small background helper it needs.\n\nDrag lidawake into your Applications folder, then open it from there."
@@ -61,6 +78,16 @@ struct PreparingView: View {
         .padding(28)
         .frame(width: 380)
     }
+
+    /// Names the copy that holds the menu bar, so a user whose install "did nothing"
+    /// can see it actually worked — and find the copy if it's the wrong one.
+    private var duplicateBody: String {
+        let tail = "This copy won\u{2019}t open, so you don\u{2019}t end up with two lidawake icons in your menu bar. lidawake is already working \u{2014} look for its icon up in the menu bar.\n\nIf that\u{2019}s the copy you want rid of, quit it from its menu-bar icon first, then drag it to the Trash."
+        guard let path = model.otherPath else {
+            return "Another copy of lidawake is already running.\n\n" + tail
+        }
+        return "lidawake is already running from:\n\n\(path)\n\n" + tail
+    }
 }
 
 final class PreparingWindowController {
@@ -85,6 +112,7 @@ final class PreparingWindowController {
     func showPreparing() {
         model.failed = false
         model.needsMove = false
+        model.duplicate = false
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -93,6 +121,7 @@ final class PreparingWindowController {
     /// Switch the window to the error state (retry / open Login Items).
     func showFailed() {
         model.needsMove = false
+        model.duplicate = false
         model.failed = true
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
@@ -102,9 +131,21 @@ final class PreparingWindowController {
     /// The app isn't in Applications, so the helper can never launch — show the
     /// actual fix rather than a Try Again that cannot succeed.
     func showFailedNeedsMove(onDiskImage: Bool = false) {
+        model.duplicate = false
         model.failed = true
         model.needsMove = true
         model.onDiskImage = onDiskImage
+        ensureWindow()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// A different copy already holds the menu bar — name it instead of exiting mute.
+    func showDuplicate(otherPath: String?) {
+        model.failed = false
+        model.needsMove = false
+        model.duplicate = true
+        model.otherPath = otherPath
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

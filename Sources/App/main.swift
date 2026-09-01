@@ -14,6 +14,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var armed = false
     private var isRecovering = false   // guards the auto-repair of a stale post-update helper
 
+    /// Set by the single-instance guard at the foot of this file: a DIFFERENT copy
+    /// of lidawake that can host the helper is already running. We must not add a
+    /// second menu-bar icon, but quitting without a word is what made a correct
+    /// install look broken (issue #1), so we name the copy that holds the menu bar
+    /// and quit when the user acknowledges. `duplicateOtherPath` is nil only if
+    /// macOS wouldn't say where that copy lives.
+    var duplicateDetected = false
+    var duplicateOtherPath: String?
+
     /// Whether the RESIDENT helper implements the hang watchdog. After a Sparkle
     /// update launchd can still be running the previous helper binary, which doesn't
     /// export `heartbeat` — and calling a selector the remote doesn't export can
@@ -62,6 +71,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Settings.registerDefaults()
         installEditMenu()
+
+        // Checked BEFORE the location test: if a working copy already holds the menu
+        // bar, "lidawake is already running over there" is the useful thing to say —
+        // telling this copy to move to Applications would only confuse, since the
+        // copy that matters is already installed. Return before the status item is
+        // created, so this launch never becomes a second menu-bar icon.
+        if duplicateDetected {
+            DispatchQueue.main.async { [weak self] in self?.showDuplicateAndQuit() }
+            return
+        }
 
         // The helper can only be launched when we live in Applications. Anywhere else
         // — the mounted disk image, Downloads, a home folder — macOS refuses to spawn
@@ -649,13 +668,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.terminate(nil)
     }
 
+    /// Another copy of lidawake — a different one, that can host the helper — already
+    /// holds the menu bar. Say which, and offer to point at it, instead of vanishing.
+    /// Exiting silently here is the whole of issue #1: the install was fine, but the
+    /// app looked dead. Same window as the other launch-time refusals, for the same
+    /// reason (an accessory app can't front a modal alert this early).
+    private func showDuplicateAndQuit() {
+        NSApp.setActivationPolicy(.regular)   // a Dock presence so it can come forward
+        let path = duplicateOtherPath
+        preparingWindow.model.onRevealOther = {
+            guard let path else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+        }
+        preparingWindow.model.onCancel = { NSApp.terminate(nil) }
+        preparingWindow.showDuplicate(otherPath: path)
+    }
+
     /// Shown when lidawake isn't installed in Applications, so its helper could never
     /// start. Offers to open the Applications folder so the drag is one step away.
-    /// Shown when lidawake isn't installed in Applications, so its helper could never
-    /// start. Uses the same window as the "Getting ready…" flow rather than an
-    /// NSAlert: an accessory (LSUIElement) app can't reliably bring a modal alert to
-    /// the front at launch — it just bounces in the Dock with nothing readable.
-    /// A real window ordered front works, and is what the rest of the app already uses.
+    /// Uses the same window as the "Getting ready…" flow rather than an NSAlert: an
+    /// accessory (LSUIElement) app can't reliably bring a modal alert to the front at
+    /// launch — it just bounces in the Dock with nothing readable. A real window
+    /// ordered front works, and is what the rest of the app already uses.
     private func showMustInstallAndQuit() {
         NSApp.setActivationPolicy(.regular)   // a Dock presence so it can come forward
         preparingWindow.model.onOpenApplications = {
@@ -766,22 +800,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-// Single-instance guard: if another copy of lidawake is already running (classic
-// cause: launched once from the mounted DMG and again from /Applications), bow out
-// quietly so the user never ends up with two menu-bar icons. The instance already
-// holding the menu bar keeps running; this later launch just exits.
+// Single-instance guard: only one lidawake should ever hold the menu bar.
+//
+// It bows out ONLY to a copy that could actually be doing the job. Since 1.1.9 a
+// copy outside /Applications returns from applicationDidFinishLaunching at the
+// `cannotHostHelper` branch BEFORE it creates a status item, so it can never be the
+// second menu-bar icon this guard exists to prevent — it has no claim on the menu
+// bar and no business blocking the copy that does.
+//
+// Bowing out to one is exactly what broke the canonical first run (open the DMG,
+// launch it, drag to Applications, launch again): the useless copy kept the bundle
+// ID and the CORRECT copy exited, silently, so a good install looked broken.
+// See issue #1.
+//
+// When the conflict is real, exiting still has to say so. Silence is only safe when
+// the two paths match — the same copy launched twice, where there is nothing to
+// explain and no way to pick the wrong one. A DIFFERENT copy is handed to the
+// delegate, which can show a window; an alert this early in launch just flashes and
+// dies (see showMustInstallAndQuit).
+//
+// Two values, not one optional: a nil PATH (macOS declining to say where the other
+// copy lives) must not be mistaken for "no duplicate", which would let a second
+// menu-bar icon through.
+var duplicateDetected = false
+var duplicateOtherPath: String? = nil
 if let bundleID = Bundle.main.bundleIdentifier {
     let mine = NSRunningApplication.current.processIdentifier
     let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
         .filter { $0.processIdentifier != mine }
-    if !others.isEmpty {
-        NSLog("[lidawake] another instance is already running — exiting this one")
-        exit(0)
+        .filter { InstallLocation.canHostHelper($0.bundleURL) }
+    if let other = others.first {
+        let otherPath = other.bundleURL?.resolvingSymlinksInPath().path
+        if otherPath == InstallLocation.bundlePath {
+            NSLog("[lidawake] this same copy is already running — exiting this one")
+            exit(0)
+        }
+        NSLog("[lidawake] a different copy is already running at \(otherPath ?? "an unknown path")")
+        duplicateDetected = true
+        duplicateOtherPath = otherPath
     }
 }
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)   // menu-bar only, no Dock icon
 let delegate = AppDelegate()
+delegate.duplicateDetected = duplicateDetected
+delegate.duplicateOtherPath = duplicateOtherPath
 app.delegate = delegate
 app.run()

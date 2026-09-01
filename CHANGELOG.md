@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.3] — 2026-09-01
+
+- Fixed the likeliest way a brand-new install looked broken. If you opened lidawake straight from the disk image before dragging it to your Applications folder, that first copy kept running in the background — and the copy you then installed properly quit the instant you opened it. No window, no menu-bar icon, no explanation, on what was a perfectly good install. The installed copy now opens normally: a copy of lidawake that can't work never stops one that can.
+- If lidawake does decline to open because another copy is genuinely already running, it now says so and tells you where that copy is, with a button to show you — instead of quitting without a word.
+
 ## [1.4.2] — 2026-08-27
 
 - Reverted the icon introduced in 1.4.1. In a real menu bar you couldn't tell at a glance whether lidawake was on or off — the two states looked almost the same unless you saw them side by side, which never happens. The previous icon is back, where the menu-bar symbol turns blue while lidawake is keeping your Mac awake.

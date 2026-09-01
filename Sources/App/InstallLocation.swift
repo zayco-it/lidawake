@@ -10,6 +10,10 @@
 //
 // The commonest way a real person lands here is running lidawake straight from the
 // mounted disk image instead of dragging it to Applications first.
+//
+// The same question gets asked about OTHER running copies, not just our own: the
+// single-instance guard only bows out to a copy that could actually be working.
+// Hence the path-taking variants below.
 
 import Foundation
 
@@ -19,10 +23,24 @@ enum InstallLocation {
     /// Running from a mounted disk image (the DMG the user just opened).
     static var isOnDiskImage: Bool { bundlePath.hasPrefix("/Volumes/") }
 
-    /// Installed somewhere the privileged helper can actually be launched from.
-    static var isInApplications: Bool {
-        bundlePath.hasPrefix("/Applications/") || bundlePath.hasPrefix("/System/Applications/")
+    /// Can a copy living at this path ever launch the root helper?
+    static func canHostHelper(path: String) -> Bool {
+        path.hasPrefix("/Applications/") || path.hasPrefix("/System/Applications/")
     }
+
+    /// Same question about ANOTHER running copy — i.e. is it a copy that can do
+    /// lidawake's job at all? One that can't never reaches the point of putting an
+    /// icon in the menu bar (see the `cannotHostHelper` early return in
+    /// applicationDidFinishLaunching), so it has no claim on being "the running
+    /// instance". A nil URL means macOS wouldn't tell us: assume it can, which keeps
+    /// the conservative pre-1.4.3 behaviour for a case that shouldn't occur.
+    static func canHostHelper(_ url: URL?) -> Bool {
+        guard let url else { return true }
+        return canHostHelper(path: url.resolvingSymlinksInPath().path)
+    }
+
+    /// Installed somewhere the privileged helper can actually be launched from.
+    static var isInApplications: Bool { canHostHelper(path: bundlePath) }
 
     /// True when the helper is very unlikely to ever start from here.
     static var cannotHostHelper: Bool { !isInApplications }
