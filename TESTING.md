@@ -117,6 +117,26 @@ had it). Relaunch the app.
 - [ ] Reopen the menu → **Keep my Mac awake** is now enabled, **Finish setup…**
       is gone.
 
+### Install location & duplicate copies (added 1.4.3)
+
+The canonical first run, in order — this exact sequence used to leave a correct
+install looking dead (issue #1). Mount the DMG rather than copying the app: a
+copied bundle loses its stapled ticket and Gatekeeper rejects it.
+
+- [ ] Open the DMG and launch lidawake **from the disk image**. Window:
+      "Move lidawake to your Applications folder". No menu-bar icon appears,
+      and the process stays running.
+- [ ] Leaving that copy running, drag lidawake to Applications and launch it
+      from there. It **must start normally and show its menu-bar icon** —
+      it must not exit silently.
+- [ ] Now quit the disk-image copy and launch it again while the Applications
+      copy runs. Window: "lidawake is already running", naming
+      `/Applications/lidawake.app`, with **Show Me Where** and **OK**.
+      **Show Me Where** reveals it in Finder; **OK** quits that copy.
+- [ ] Launch the same `/Applications` copy a second time (`open -n`, or run
+      `Contents/MacOS/lidawake` in a terminal). It exits quietly, exit code 0 —
+      no window. Silence is correct only when both paths match.
+
 ## 2. Menu-bar glyph & menu state
 
 - [ ] **Off:** monochrome laptop glyph; menu item unchecked; status "Off — your
@@ -223,3 +243,5 @@ On **AC power**, no external display:
 - [ ] Arm on AC → `SleepDisabled 1`; disarm → `0`.
 - [ ] Glyph goes blue/mono with state; menu checkmark tracks state.
 - [ ] Quit while armed → `SleepDisabled 0`.
+- [ ] A copy running outside `/Applications` does not stop the `/Applications`
+      copy from starting (see section 1).
