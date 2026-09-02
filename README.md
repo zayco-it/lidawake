@@ -4,7 +4,9 @@
 
 lidawake is a tiny menu-bar app that stops your Mac from sleeping when you close the
 lid, so it can keep downloading, backing up, running a task, or playing audio with
-the lid shut. One click to turn it on, one to turn it off. Safe by default.
+the lid shut. One click to turn it on, one to turn it off — and it looks after itself
+in between. It stops on its own when the work is done, backs off if the Mac runs hot,
+and can't leave your Mac stuck awake if it crashes.
 
 It does a few things, and does them well — made for people who just want to close the
 lid and keep going, not to configure anything.
@@ -40,6 +42,11 @@ built to be careful:
   15 seconds, and if check-ins stop for 90 seconds the helper restores normal
   sleep on its own authority. That case matters most, because the thermal and
   battery guards run inside the app and a frozen app freezes them too.
+- **Stops when nothing is happening** — with the lid closed, thirty minutes with no
+  real CPU or network activity and lidawake restores normal sleep and tells you it
+  did. Not configurable, deliberately: the rule you rely on shouldn't have a knob.
+- **Tells you what happened** — open the lid after five minutes or more and it reports
+  how long the Mac stayed awake, whether it stayed cool, and what the battery did.
 - **Turns the screen off** when you close the lid.
 - **Comes back after a reboot** — lidawake adds itself to Login Items once, the
   first time it's working, so a restart doesn't quietly leave your Mac sleeping
@@ -61,11 +68,13 @@ trial** that runs in the app itself — no account, no sign-up, no card details 
 became paid, it stays free for you — forever.
 
 **Why pay for something open source?** Not for a secret — the trick (`pmset disablesleep`) is
-well known, and free tools use it too. You're paying for the *packaged* version: notarized so
-macOS trusts it on the first launch, a signed helper you approve with one click (no `sudo`
-scripts or sudoers grants, no "unidentified developer" bypass), the safety guards, and a real
-company to answer if something breaks. Prefer to build it yourself? Please do — that's what the
-source is for.
+well known, and free tools use it too. Keeping a Mac awake is the easy part; stopping safely is
+the product. You're paying for what runs when nobody is watching: the thermal and battery
+guards, the automatic stop once the work is done, and a privileged helper that restores normal
+sleep even if the app crashes, is force-quit, or freezes. Plus the packaging — notarized so
+macOS trusts it on the first launch, a signed helper you approve with one click rather than a
+`sudo` script or a sudoers grant — and a real company to answer if something breaks. Prefer to
+build it yourself? Please do — that's what the source is for.
 
 ## Install
 
