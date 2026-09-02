@@ -118,6 +118,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         heartbeat.onBeat   = { [weak self] in self?.sendHeartbeat() }
         thermal.start()
         notifier.start()
+        // Clicking a notification is the one thing that proves a message reached
+        // a person, so it — and only it, besides the user opening the menu —
+        // stands the carrier down.
+        notifier.onEngaged = { [weak self] in
+            WakeNotice.markSeen()
+            self?.refreshItems()
+        }
 
         // Apply setting changes LIVE while armed — no disarm/re-arm dance.
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -233,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // One-shot login-item disclosure (T2.2). Same show/hide pattern as
         // approveItem and licenseItem — not a new surface, the third use of one
         // the menu already has. Clicking it goes straight to the off switch.
-        noticeItem = NSMenuItem(title: WakeNotice.menuTitle, action: #selector(openLoginItemsFromNotice), keyEquivalent: "")
+        noticeItem = NSMenuItem(title: "", action: #selector(openLoginItemsFromNotice), keyEquivalent: "")
         noticeItem.target = self
         menu.addItem(noticeItem)
 
@@ -304,40 +311,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// never told the same thing twice through two channels.
     func menuDidClose(_ menu: NSMenu) {
         if WakeNotice.pending && !(noticeItem?.isHidden ?? true) {
-            WakeNotice.markDelivered()
+            WakeNotice.markSeen()
         }
     }
 
     @objc private func openLoginItemsFromNotice() {
-        WakeNotice.markDelivered()
+        WakeNotice.markSeen()
         refreshItems()
         helperManager.openLoginItems()
     }
 
-    /// Raise the login-item disclosure and try the fast channel. The menu item is
-    /// already live by this point (WakeNotice.raise() is synchronous); the
-    /// notification only ever *removes* the need for it.
+    /// The one-shot login-item disclosure (T2.2). It no longer stands itself
+    /// down when the notification is accepted — that was the bug: an accepted
+    /// post is not a seen post, so the carrier was being cleared having shown
+    /// the user nothing.
     private func announceLoginItem() {
-        WakeNotice.raise()
+        announce(title: WakeNotice.loginItemTitle,
+                 body: WakeNotice.loginItemBody,
+                 menuLine: WakeNotice.loginItemMenu,
+                 actionable: true)
+    }
+
+    /// Say something the user must not miss, through both channels.
+    ///
+    /// The menu line is raised FIRST and synchronously, so it is live before the
+    /// notification can fail in any of the ways that do not report failure. No
+    /// outcome from the post clears it — see WakeNotice. Only the user does.
+    private func announce(title: String, body: String, menuLine: String, actionable: Bool = false) {
+        WakeNotice.raise(menuLine, actionable: actionable)
         refreshItems()
-        notifier.post(title: WakeNotice.title, body: WakeNotice.body) { [weak self] outcome in
-            switch outcome {
-            case .posted:
-                WakeNotice.markDelivered()
-                self?.refreshItems()
-            case .denied, .failed:
-                // Deliberately nothing: the menu item stays, which is the whole
-                // point of it being the carrier rather than the fallback.
-                break
-            }
-        }
+        notifier.present(title: title, body: body, stillWanted: { WakeNotice.pending })
     }
 
     /// The lid has been opened after a spell shut with lidawake on (T2.4).
     private func postWakeSummary() {
         guard let msg = wakeSummary.finish(battery: readPowerState().percent,
                                            peakThermal: thermal.peak) else { return }
-        notifier.post(title: msg.title, body: msg.body)
+        announce(title: msg.title, body: msg.body, menuLine: "\(msg.title) — \(msg.body)")
     }
 
     private func refreshItems() {
@@ -345,6 +355,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let entitled = license.isEntitled
         approveItem.isHidden = helperEnabled
         noticeItem.isHidden = !WakeNotice.pending
+        noticeItem.title = WakeNotice.text ?? ""
+        // Informational notices are shown the way the status line is: readable,
+        // not clickable. Only the login-item disclosure has somewhere to go.
+        noticeItem.action = WakeNotice.isActionable ? #selector(openLoginItemsFromNotice) : nil
+        noticeItem.isEnabled = WakeNotice.isActionable
         toggleItem.state = armed ? .on : .off
         toggleItem.isEnabled = helperEnabled && entitled && !isRecovering
 
@@ -581,6 +596,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func autoSleepIdle() {
         guard armed else { return }
         helperClient.setDisableSleepSync(false)
+        // Close the session HERE, before stopArmedWatchers() cancels it, and
+        // keep the result. Two reasons, and the second is the important one:
+        //
+        // 1. Otherwise this session is reported by nobody. stopArmedWatchers()
+        //    also stops LidMonitor, so onLidOpened never fires again — the user
+        //    opens the lid in the morning and lidawake says nothing at all.
+        // 2. Now is when the duration is TRUE. The Mac sleeps from this point,
+        //    which is exactly why measuring to lid-open would be wrong — the
+        //    reasoning already recorded on wakeSummary.cancel().
+        let session = wakeSummary.finish(battery: readPowerState().percent,
+                                         peakThermal: thermal.peak)
         stopArmedWatchers()
         armed = false
         refreshItems(); updateIcon()
@@ -588,8 +614,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // a lie the moment IdleWatcher.window changed — and it already reads
         // wrong under LIDAWAKE_IDLE_SECONDS, which is how this was noticed.
         let minutes = max(1, Int(IdleWatcher.window / 60))
-        notifier.post(title: "lidawake turned itself off",
-                      body: "Nothing had been happening for \(minutes) minutes, so your Mac is free to sleep normally again. Switch it back on any time from the menu bar.")
+        // ONE message, not two. The stop and the session are the same event, and
+        // the old pair could never both be read: this one is posted with the lid
+        // physically shut, so it is never on screen when it is sent. Kept short —
+        // a notification gets about a second of attention.
+        var body = "Nothing had been happening for \(minutes) minutes."
+        var line = "lidawake turned itself off"
+        if let s = session {
+            body += " Awake \(s.body)."
+            line += " — \(s.body)"
+        }
+        announce(title: "lidawake turned itself off", body: body, menuLine: line)
     }
 
     private func autoDisarm(_ why: String) {

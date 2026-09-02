@@ -1,5 +1,4 @@
-// The login-item disclosure (T2.2), and the rule that it is said exactly once
-// through exactly one channel.
+// The menu carrier: anything lidawake needs to tell you that you must not miss.
 //
 // Why it exists at all: the app registers itself in Login Items, and the author
 // of the app did not know it was doing that. A normal user certainly would not,
@@ -10,35 +9,63 @@
 //
 // Two channels, and the ORDER matters:
 //
-//   - The **menu item** is the carrier. `pending` is set synchronously the
-//     instant registration succeeds, so it is live before anything asynchronous
-//     can go wrong.
+//   - The **menu line** is the carrier. It is raised synchronously, before
+//     anything asynchronous can go wrong, and it is persisted, so it survives a
+//     quit or a crash.
 //   - The **notification** is the courtesy. It says the same thing sooner,
 //     without the user having to open the menu.
 //
-// Whichever lands first clears `pending`; the other stands down. A denial, a
-// Focus mode, an unanswered permission prompt or a scheduling error cannot
-// swallow the message, because none of them touch the menu item.
+// THE RULE THAT WAS BROKEN AND IS NOW FIXED: only the USER clears this — by
+// opening the menu with the line visible, or by clicking the notification. It is
+// NOT cleared because a notification was accepted by the system. A post that
+// lands while the display is asleep, or under a Focus mode, is accepted and then
+// never presented; clearing on that leaves the user with neither channel, which
+// is exactly the failure this carrier exists to prevent.
 
 import Foundation
 
 enum WakeNotice {
 
-    private static let pendingKey = "loginItemNoticePending"
+    private static let textKey       = "noticeMenuText"
+    private static let actionableKey = "noticeActionable"
+    /// 1.2.1–1.4.3 stored only a Bool, because the login-item disclosure was the
+    /// only thing that used this. Read once so upgrading mid-notice does not
+    /// silently drop a disclosure the user has not seen yet.
+    private static let legacyKey     = "loginItemNoticePending"
 
-    static let title = "lidawake now opens at login"
-    static let body  = "So it keeps working after you restart. You can turn this off in System Settings › General › Login Items."
+    static let loginItemTitle = "lidawake now opens at login"
+    static let loginItemBody  = "So it keeps working after you restart. You can turn this off in System Settings › General › Login Items."
     /// Shorter, because it sits in a menu next to the on/off state.
-    static let menuTitle = "lidawake now opens at login — change…"
+    static let loginItemMenu  = "lidawake now opens at login — change…"
 
-    static var pending: Bool {
-        get { UserDefaults.standard.bool(forKey: pendingKey) }
-        set { UserDefaults.standard.set(newValue, forKey: pendingKey) }
+    /// The line to show in the menu, or nil when there is nothing to say.
+    static var text: String? {
+        if let t = UserDefaults.standard.string(forKey: textKey), !t.isEmpty { return t }
+        if UserDefaults.standard.bool(forKey: legacyKey) { return loginItemMenu }
+        return nil
     }
 
-    /// Called the moment `LoginItem.registerOnce()` newly registers.
-    static func raise() { pending = true }
+    /// True when clicking the line does something (the login-item disclosure
+    /// opens System Settings). Informational notices are shown disabled, the same
+    /// way the status line is.
+    static var isActionable: Bool {
+        if UserDefaults.standard.string(forKey: textKey) != nil {
+            return UserDefaults.standard.bool(forKey: actionableKey)
+        }
+        return UserDefaults.standard.bool(forKey: legacyKey)
+    }
 
-    /// Called when either channel has delivered it. Idempotent.
-    static func markDelivered() { pending = false }
+    static var pending: Bool { text != nil }
+
+    static func raise(_ line: String, actionable: Bool) {
+        UserDefaults.standard.set(line, forKey: textKey)
+        UserDefaults.standard.set(actionable, forKey: actionableKey)
+    }
+
+    /// The user has demonstrably seen it. Idempotent.
+    static func markSeen() {
+        UserDefaults.standard.removeObject(forKey: textKey)
+        UserDefaults.standard.removeObject(forKey: actionableKey)
+        UserDefaults.standard.set(false, forKey: legacyKey)
+    }
 }

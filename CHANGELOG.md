@@ -3,6 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.4] — 2026-09-02
+
+- Fixed the reason you may never have seen lidawake's messages. When lidawake keeps your Mac awake with the lid shut it also turns the screen off — and anything it had to tell you was being sent to that dark screen, where macOS files it away silently instead of showing it. Opening the lid did not bring it back. Messages now wait until your screen is actually on, so you see them when you open the lid rather than finding them in Notification Center days later.
+- Turning itself off after a quiet spell now tells you the whole story in one message, when you open the lid: why it stopped, and how long your Mac stayed awake, whether it stayed cool, and what the battery did. Previously the "turned itself off" notice was sent while the lid was still closed — so it could never be seen — and the summary was thrown away entirely, which meant a Mac left overnight greeted you with nothing at all in the morning.
+- Anything lidawake needs to tell you now also waits in its menu until you have actually seen it. It used to clear that reminder as soon as macOS accepted the notification, which is not the same as you reading it — so a message that arrived during Do Not Disturb, or while the screen was off, could disappear having been shown to nobody.
+
 ## [1.4.3] — 2026-09-01
 
 - Fixed the likeliest way a brand-new install looked broken. If you opened lidawake straight from the disk image before dragging it to your Applications folder, that first copy kept running in the background — and the copy you then installed properly quit the instant you opened it. No window, no menu-bar icon, no explanation, on what was a perfectly good install. The installed copy now opens normally: a copy of lidawake that can't work never stops one that can.
