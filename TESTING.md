@@ -117,6 +117,29 @@ had it). Relaunch the app.
 - [ ] Reopen the menu → **Keep my Mac awake** is now enabled, **Finish setup…**
       is gone.
 
+### The launch probe (added 1.4.5) — MUST be run on hardware
+
+The app now asks the helper whether it answers before it says anything about
+setup, so the Welcome window arrives on a reply rather than on a guess. That
+makes it slightly late on a genuine first run, and these two are exactly what
+that delay could cost. **Reasoning about them is not enough — watch the screen.**
+
+- [ ] **The Welcome window does not steal focus from something you were reading.**
+      Launch a never-set-up copy, then immediately click into another app and
+      start reading. When Welcome appears it must not yank you out mid-sentence.
+      (It calls `activate(ignoringOtherApps: true)`; that was harmless when it
+      fired synchronously at launch and is the thing to watch now that it doesn't.)
+- [ ] **Nothing flickers in the menu bar or the menu while the probe runs.** Launch
+      an already-set-up copy and open the menu immediately, before the probe can
+      have replied. It must read "Off — your Mac will sleep normally" with a live
+      toggle from the first frame — never "Finish setup…", not even for an instant.
+      Hold the menu open for ~3s: nothing may change under you.
+- [ ] The glyph must not blink or change during launch — `updateIcon()` reads only
+      `armed`, so this is a regression check, not an expected behaviour.
+- [ ] Approve in Login Items during onboarding, click **I've turned it on** →
+      **Get Started**, then open the menu: **Keep my Mac awake** is live and
+      **Finish setup…** is gone, *before* the helper has ever answered.
+
 ### Install location & duplicate copies (added 1.4.3)
 
 The canonical first run, in order — this exact sequence used to leave a correct
@@ -197,6 +220,48 @@ On **AC power**, no external display:
       unverified path. Note if you ever see it fire.
 
 ## 8. Helper lifecycle
+
+### After an update (added 1.4.5) — MUST be run on hardware
+
+This is the bug 1.4.5 fixes, and it only ever appeared on a machine that had not
+been tested on.
+
+**Do NOT gate the release on a real Sparkle self-update.** That needs the new
+version already published, so it can only ever be a POST-release check — the same
+trap that made 1.0.3's pre-ship run use a fake older build against the live
+appcast. It is also not what the bug is about: Sparkle's download, signature check
+and relaunch are orthogonal. The failure is entirely about what the NEW app
+concludes from a STALE daemon, and that state is reproducible in a minute:
+
+1. With the current version running and its helper up, note the helper's start
+   time — `ps -o lstart= -p "$(pgrep -x lidawake-helper)"`.
+2. Quit lidawake from its menu-bar icon. **Leave the helper running** (KeepAlive
+   keeps it up; do not reboot, do not bootout).
+3. Replace the bundle in place: `ditto build/lidawake.app /Applications/lidawake.app`
+   (admin auth — this is the same swap Sparkle performs).
+4. `open /Applications/lidawake.app`, then confirm the helper did NOT restart —
+   same PID and start time as step 1. That is the stale-daemon state.
+
+Then, in that state:
+
+- [ ] Open the menu straight after the update relaunch. It must show the normal
+      **Off — your Mac will sleep normally** line and a live toggle. It must NEVER
+      say "Finish the one-time setup to begin", and **Finish setup…** must not
+      appear — that is the entire regression, and the whole point of the release.
+- [ ] Click **Keep my Mac awake** during that window. It must either arm outright
+      or show "Getting lidawake ready…" and then arm. It must not be greyed out,
+      and it must not open the Welcome window.
+- [ ] Force the unreachable case — toggle lidawake OFF under **Allow in the
+      Background** (no admin needed; `sudo launchctl bootout system/it.zayco.lidawake.helper`
+      does the same from an admin account) and relaunch the app. The menu still
+      shows the normal state; the toggle is still live; clicking it goes through
+      "Getting lidawake ready…". No setup UI at any point. This is the closest
+      reproduction of the reported failure and the single most important check here.
+- [ ] Nothing in the menu ever tells the user to go and enable a Login Items entry
+      that is already enabled. If you see that text, the release is not shippable.
+- [ ] **Post-release**, once the appcast is live: a real Sparkle self-update from
+      the previous version, repeating the first two checks above. Record it in the
+      results log either way — this is the confirmation, not the gate.
 
 - [ ] **Self-heal:** after a `SIGN=1` rebuild, `pgrep -lx lidawake-helper` shows
       nothing for up to ~1 min, then the helper reappears on its own.

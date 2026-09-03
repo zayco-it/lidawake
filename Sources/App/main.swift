@@ -32,14 +32,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// behaves as it always did: no watchdog, no harm.
     private var helperHasWatchdog = false
 
-    /// True once the helper has been genuinely set up (approved) on this Mac.
-    /// Persisted. This is what lets us tell a stale helper after an update ("just
-    /// reconnect") apart from a brand-new install ("first-time setup") — only the
-    /// latter ever shows the Welcome window. Migrated for existing users in
-    /// applicationDidFinishLaunching.
+    /// True once the helper has genuinely ANSWERED on this Mac. Persisted, and set
+    /// in exactly two places — `checkHelperAtLaunch()` and `finishArming()` — because
+    /// those are the only two that hold evidence: an XPC reply. It is never derived
+    /// from `SMAppService` status, which is not evidence in either direction.
+    ///
+    /// This is the app's single answer to "is lidawake set up here?". It tells a
+    /// stale helper after an update ("just reconnect", quietly) apart from a
+    /// brand-new install ("first-time setup") — only the latter ever sees the Welcome
+    /// window, or a menu that mentions setup at all.
     private var helperApprovedOnce: Bool {
         get { UserDefaults.standard.bool(forKey: "helperApprovedOnce") }
         set { UserDefaults.standard.set(newValue, forKey: "helperApprovedOnce") }
+    }
+
+    /// Does the app have grounds to talk about first-time setup?
+    ///
+    /// Asked wherever there is no fresh evidence to hand — the menu, and `arm()`.
+    /// It takes BOTH signals to be negative, and that asymmetry is the whole fix:
+    ///
+    ///  - `helperApprovedOnce` false alone is not enough, because a Mac that was
+    ///    approved a moment ago in Login Items has not had its helper answer yet.
+    ///  - status not `.enabled` alone is DEFINITELY not enough. That is the bug:
+    ///    it greeted an already-set-up user with "Finish setup…" after an update
+    ///    and sent them to switch on something that was already on. A Mac whose
+    ///    helper has answered before is never asked to set up again — whatever
+    ///    `SMAppService` says, an unreachable helper is a reconnect problem the app
+    ///    owns (`prepareAndRecover()`), not a job for the user.
+    ///
+    /// Either signal on its own is enough to say "set up". Neither is trusted on
+    /// its own to say "not set up". Where there IS fresh evidence — the launch probe
+    /// has just asked the helper directly — `helperApprovedOnce` is used alone, and
+    /// status gets no vote at all.
+    private var needsFirstTimeSetup: Bool {
+        !helperApprovedOnce && helperManager.state != .enabled
     }
 
     private let helperManager  = HelperManager()
@@ -136,33 +162,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         _ = helperManager.ensureRegistered()
 
         // Decide once: existing free user (grandfathered) vs. new (start the 14-day
-        // trial). MUST run before maybeShowOnboarding(), which sets "seenWelcome".
+        // trial). This is the ONE place SMAppService's status still gets a vote, and
+        // deliberately so: an existing free user whose prefs predate "seenWelcome" is
+        // recognised by nothing else, and the two mistakes here don't cost the same —
+        // wrongly charging someone who was already using lidawake for free is worse
+        // than wrongly grandfathering someone. Entitlement is not readiness, and
+        // nothing below this line reads it.
         let usedBefore = UserDefaults.standard.bool(forKey: "seenWelcome")
             || helperManager.state == .enabled
-        if usedBefore { helperApprovedOnce = true }   // returning user: the helper was set up before
         license.bootstrap(usedBefore: usedBefore)
         license.revalidateIfNeeded()
+        // Read just above, so it's safe to set here. It used to be written on the
+        // way out of the onboarding decision, which is no longer synchronous. The flag
+        // means "the app has run before" — true whether or not the Welcome window ends
+        // up on screen, so it does not belong on the far side of an async probe.
+        UserDefaults.standard.set(true, forKey: "seenWelcome")
 
         buildMenu()
         updateIcon()
 
-        // Anyone already set up before open-at-login shipped gets it here, rather
-        // than having to arm one more time for it to take. Once only — see
-        // LoginItem.registerOnce().
+        // Ask the helper before saying anything about setup. Everything that used to
+        // be decided here from SMAppService's status now waits for that answer.
         //
-        // MUST come after buildMenu(): announceLoginItem() calls refreshItems(),
-        // and every menu item is an implicitly-unwrapped NSMenuItem! that does not
-        // exist until buildMenu() runs. Calling it earlier crashes on launch — and
-        // only on this path, the already-set-up one, which no fresh-install test
-        // would ever reach.
-        if helperManager.state == .enabled, LoginItem.registerOnce() { announceLoginItem() }
-
-        maybeShowOnboarding()
-        warmUpHelperIfStale()
+        // The menu is already right for this launch without waiting: it reads the
+        // PERSISTED helperApprovedOnce, so a Mac that has been set up shows its normal
+        // menu from the first frame, and one that hasn't shows setup. Nothing changes
+        // under the user when the probe replies.
+        //
+        // MUST come after buildMenu(): the completion calls refreshItems() and
+        // announceLoginItem(), and every menu item is an implicitly-unwrapped
+        // NSMenuItem! that does not exist until buildMenu() runs. Calling it earlier
+        // crashes on launch — and only on the already-set-up path, which no
+        // fresh-install test would ever reach.
+        checkHelperAtLaunch()
     }
 
-    /// After an update, the helper launchd is actually serving may not be the one
-    /// this bundle ships. Two cases, both repaired the same way:
+    /// One question, asked once at launch: DOES THE HELPER ANSWER?
+    ///
+    /// A reply is the strongest evidence the app can get, and it is the only thing
+    /// that may conclude "this Mac is set up". `SMAppService`'s status is never
+    /// trusted to conclude the opposite: it can read `.enabled` over a helper that
+    /// never runs (issue #2) and anything but `.enabled` over one that is working
+    /// perfectly well. Showing first-run setup on the strength of it is what greeted
+    /// an already-set-up user with "Finish setup…" after an update, and then sent
+    /// them to Login Items to switch on something that was already on. It keeps a
+    /// vote only in `needsFirstTimeSetup`, and only in the safe direction.
+    ///
+    /// A reply is the ONLY thing here that sets `helperApprovedOnce`. Silence, on a
+    /// Mac that has had a working helper before, is a reconnect problem the app owns
+    /// and repairs itself — never a reason to ask the user to set anything up.
+    private func checkHelperAtLaunch(triesLeft: Int = 3) {
+        helperClient.helperVersion { [weak self] version in
+            guard let self else { return }
+            guard let version else {
+                // Retry before concluding anything — but only where there is something
+                // to wait for. One slow XPC connect at login used to be enough to
+                // trigger a full unregister/re-register of the root daemon: surgery on
+                // the strength of a single missed reply. A Mac that has never had a
+                // helper has nothing to reconnect to, so it doesn't wait: it goes
+                // straight to Welcome rather than sitting on a pointless delay.
+                if triesLeft > 1, self.helperApprovedOnce {
+                    self.helperClient.disconnect()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        self?.checkHelperAtLaunch(triesLeft: triesLeft - 1)
+                    }
+                    return
+                }
+                if self.helperApprovedOnce {
+                    NSLog("[lidawake] helper didn't answer at launch — reloading in the background")
+                    self.warmUpRound(roundsLeft: 3)   // quiet repair; the menu says nothing about setup
+                } else if self.needsFirstTimeSetup {
+                    // Nothing has ever answered here, and macOS agrees nothing is
+                    // approved. NOW the Welcome window is honest: we asked first, and
+                    // there was nothing on the other end. Deferring it this far is the
+                    // point — a Mac whose helper answers never sees it, whatever the
+                    // registration status happens to say.
+                    self.showOnboarding()
+                }
+                // Otherwise: no record, but macOS says approved (issue #2's shape —
+                // a status that reads `.enabled` over a helper that never runs). Say
+                // nothing and interrupt no one. The toggle is live, and clicking it
+                // routes into prepareAndRecover(), which repairs it or reports the
+                // real failure. Quietly sorting it out beats a window asking the user
+                // to confirm something we just failed to confirm ourselves.
+                return
+            }
+            // A real reply. This and finishArming() are the only two places allowed to
+            // set the flag, because they are the only two that have evidence.
+            self.helperApprovedOnce = true
+            if LoginItem.registerOnce() { self.announceLoginItem() }
+            self.refreshItems()
+            if !lidAwakeVersionAtLeast(version, LidAwakeIDs.helperVersion) {
+                NSLog("[lidawake] resident helper \(version) is older than the bundled \(LidAwakeIDs.helperVersion) — reloading in the background")
+                self.warmUpRound(roundsLeft: 3)
+            }
+        }
+    }
+
+    /// Quiet post-update repair. After an update the helper launchd is actually
+    /// serving may not be the one this bundle ships — two cases, both repaired the
+    /// same way:
     ///
     ///  - **unreachable** — the classic stale job: registered, mach service dead.
     ///  - **reachable but OLD** — the bundle was replaced under a running daemon, so
@@ -172,22 +271,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ///    helper-side change in the update, the hang watchdog among them. See
     ///    `HelperClient.probeCurrent` for the mechanism.
     ///
-    /// Either way, reconnect QUIETLY in the background now — no window, no arming —
-    /// so the right helper is up by the time the user turns lidawake on (no
-    /// "Getting ready…" wait). Purely a head start: it yields the instant the user
-    /// interacts (see the `!armed && !isRecovering` guards), so the click-time path
-    /// always wins and this can never fight it. If the user does arm first, the
-    /// reload has already killed the old daemon, so that attempt routes through
-    /// `prepareAndRecover()` and lands on the new helper anyway.
-    private func warmUpHelperIfStale() {
-        guard helperApprovedOnce else { return }
-        helperClient.probeCurrent { [weak self] current in
-            guard let self, !current, !self.armed, !self.isRecovering else { return }
-            NSLog("[lidawake] resident helper missing or older than the bundled \(LidAwakeIDs.helperVersion) — reloading in the background")
-            self.warmUpRound(roundsLeft: 3)
-        }
-    }
-
+    /// Either way, reconnect QUIETLY — no window, no arming, and NOTHING said in the
+    /// menu — so the right helper is up by the time the user turns lidawake on (no
+    /// "Getting ready…" wait). Silence was never the problem here; the menu
+    /// contradicting it was, and that is fixed at the source: `refreshItems()` reads
+    /// `helperApprovedOnce`, which is true throughout this, so the menu cannot tell
+    /// the user to go and redo by hand the registration this is mid-way through.
+    ///
+    /// Purely a head start: it yields the instant the user interacts (see the
+    /// `!armed && !isRecovering` guards), so the click-time path always wins and this
+    /// can never fight it. If the user does arm first, the reload has already killed
+    /// the old daemon, so that attempt routes through `prepareAndRecover()` and lands
+    /// on the new helper anyway.
     private func warmUpRound(roundsLeft: Int) {
         guard !armed, !isRecovering else { return }   // user took over — let the click-time path own it
         helperManager.reload()
@@ -351,9 +446,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func refreshItems() {
-        let helperEnabled = (helperManager.state == .enabled)
+        // See needsFirstTimeSetup. Both its inputs are cheap and synchronous, so the
+        // menu is correct on the very first frame of a launch — nothing changes under
+        // the user when the launch probe replies a moment later.
+        let needsSetup = needsFirstTimeSetup
         let entitled = license.isEntitled
-        approveItem.isHidden = helperEnabled
+        approveItem.isHidden = !needsSetup
         noticeItem.isHidden = !WakeNotice.pending
         noticeItem.title = WakeNotice.text ?? ""
         // Informational notices are shown the way the status line is: readable,
@@ -361,7 +459,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         noticeItem.action = WakeNotice.isActionable ? #selector(openLoginItemsFromNotice) : nil
         noticeItem.isEnabled = WakeNotice.isActionable
         toggleItem.state = armed ? .on : .off
-        toggleItem.isEnabled = helperEnabled && entitled && !isRecovering
+        // A Mac that has been set up keeps a LIVE toggle even when the helper is
+        // unreachable. Clicking it is the only way into prepareAndRecover(), the flow
+        // that actually repairs an unreachable helper — so greying it out closed the
+        // one door that led anywhere, in exactly the state that needed it, and left
+        // the user a dead end telling them to go fix it by hand.
+        toggleItem.isEnabled = !needsSetup && entitled && !isRecovering
 
         // Trial / buy line — only while unlicensed.
         switch license.status {
@@ -378,7 +481,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Status line.
         if isRecovering {
             statusLineItem.title = "Reconnecting lidawake\u{2019}s helper\u{2026}"
-        } else if !helperEnabled {
+        } else if needsSetup {
             statusLineItem.title = "Finish the one-time setup to begin"
         } else if !entitled {
             statusLineItem.title = "Your free trial has ended \u{2014} buy to keep using lidawake"
@@ -447,18 +550,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openLoginItems: { [weak self] in self?.helperManager.openLoginItems() })
     }
 
-    /// Show the Welcome window on the first launch, or whenever the helper still
-    /// needs approval — so a new user is always guided to the one setup step.
-    private func maybeShowOnboarding() {
-        // Only a genuine first-time user (helper never approved) gets the Welcome
-        // window. A returning user whose helper is merely stale after an update is
-        // guided by the "Getting ready…" flow when they turn on — never onboarding.
-        if !helperApprovedOnce && helperManager.state != .enabled {
-            showOnboarding()
-        }
-        UserDefaults.standard.set(true, forKey: "seenWelcome")
-    }
-
     @objc private func toggleArmed() {
         guard !isRecovering else { return }   // busy recovering the helper — ignore clicks
         if armed { disarm() } else { arm() }
@@ -467,11 +558,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func arm() {
         // Paywall gate: no arming once the trial's over and there's no license.
         guard license.isEntitled else { showLicense(); return }
-        // Genuine first-time setup ONLY (helper never approved on this Mac) → the
-        // friendly Welcome window. A previously-approved helper that's merely
-        // unreachable (stale after an update) must NOT come here — it goes through
-        // the "Getting ready…" recovery instead, so the Welcome window can't reappear.
-        if !helperApprovedOnce && helperManager.state != .enabled {
+        // Genuine first-time setup ONLY → the friendly Welcome window. A helper that
+        // has answered here before but is merely unreachable now (stale after an
+        // update) must NOT come here — it falls through to the XPC call below, which
+        // fails as `.unreachable` and routes into the "Getting ready…" recovery, so
+        // the Welcome window can't reappear. See needsFirstTimeSetup.
+        if needsFirstTimeSetup {
             _ = helperManager.ensureRegistered()
             showOnboarding()
             return
