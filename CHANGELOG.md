@@ -3,6 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.7] — 2026-09-04
+
+- The license key box no longer shows a made-up example key. It used to hint at a format like XXXX-XXXX-XXXX-XXXX, which looks nothing like the keys actually issued — so the only clue the box offered was telling people holding a perfectly good key that theirs was the wrong shape, before they had even tried it. It now simply says to paste your key.
+- If a key isn't accepted, lidawake now says something you can act on: copy it again from your purchase email, and write to us if it still won't take. It used to say "check for typos", which assumed you had typed a key that nobody types — they are pasted, not retyped.
+- The buy screen no longer tells everyone their license covers three Macs. That stopped being true when the single-Mac license went on sale, and it was being shown to the person about to buy one.
+
 ## [1.4.6] — 2026-09-04
 
 - Uninstall now checks that macOS actually dropped lidawake's background item, instead of assuming it worked because the request didn't fail. If the item is still registered afterwards, lidawake says so and points you at the one switch that finishes the job — rather than reporting a clean removal it never confirmed. Removing an app shouldn't leave a background item behind, and it certainly shouldn't tell you it hasn't.

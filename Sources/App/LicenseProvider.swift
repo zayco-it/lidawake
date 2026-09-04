@@ -30,7 +30,12 @@ enum LicenseError: Error {
 
     var message: String {
         switch self {
-        case .invalidKey:        return "That license key wasn\u{2019}t recognized. Check for typos and try again."
+        // Nobody types one of these keys, so "check for typos" sent people hunting a
+        // transcription error in a string they never transcribed. Say where a good copy
+        // comes from, and leave a way out rather than a dead end. Note the app already
+        // trims surrounding whitespace, so warning about stray spaces would be advice
+        // about a problem it has already solved.
+        case .invalidKey:        return "That license key wasn\u{2019}t recognized. Copy it again from your purchase email and paste it here. If it still won\u{2019}t take, email support@zayco.it."
         case .noActivationsLeft: return "This license is already active on the maximum number of Macs. Free one up at customers.freemius.com \u{2014} open Activations and deactivate a Mac you no longer use. The link and your password are in your purchase email."
         case .expired:           return "This license has expired."
         case .offline:           return "Couldn\u{2019}t reach the licensing server. Check your internet connection and try again."
