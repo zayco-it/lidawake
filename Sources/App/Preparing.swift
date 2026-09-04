@@ -16,6 +16,11 @@ final class PreparingModel: ObservableObject {
     /// Tailors the wording: opened straight from the mounted DMG vs. installed
     /// somewhere else that can't host the helper.
     @Published var onDiskImage = false
+    /// macOS reports the background item as switched ON, but the helper never
+    /// answers. The generic failure text tells the user to go and switch on something
+    /// that is already switched on — the one piece of advice that cannot help here —
+    /// so this state gets its own wording. Issue #2.
+    @Published var stillRegistered = false
     /// A different copy of lidawake already holds the menu bar. This launch is
     /// bowing out — but it says so rather than vanishing, which is issue #1.
     @Published var duplicate = false
@@ -58,8 +63,12 @@ struct PreparingView: View {
                     Button("Quit") { model.onCancel() }.keyboardShortcut(.defaultAction)
                 }.padding(.top, 2)
             } else if model.failed {
-                Text("lidawake couldn\u{2019}t start its helper").font(.headline)
-                Text("Give it a few seconds and try again. If it keeps happening, switch lidawake\u{2019}s background item off and back on in System Settings \u{203A} Login Items \u{2014} that\u{2019}s the one listed as running in the background, not \u{201C}Open at Login\u{201D}.")
+                Text(model.stillRegistered
+                     ? "lidawake\u{2019}s helper isn\u{2019}t answering"
+                     : "lidawake couldn\u{2019}t start its helper").font(.headline)
+                Text(model.stillRegistered
+                     ? "macOS lists lidawake\u{2019}s background item as switched on, so the setting you\u{2019}d normally check is already correct \u{2014} turning it on won\u{2019}t help. lidawake has re-registered it several times without getting a reply.\n\nSwitching that item off and back on in System Settings \u{203A} Login Items sometimes clears it. If it keeps happening, email support@zayco.it."
+                     : "Give it a few seconds and try again. If it keeps happening, switch lidawake\u{2019}s background item off and back on in System Settings \u{203A} Login Items \u{2014} that\u{2019}s the one listed as running in the background, not \u{201C}Open at Login\u{201D}.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
@@ -113,15 +122,17 @@ final class PreparingWindowController {
         model.failed = false
         model.needsMove = false
         model.duplicate = false
+        model.stillRegistered = false
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Switch the window to the error state (retry / open Login Items).
-    func showFailed() {
+    func showFailed(stillRegistered: Bool = false) {
         model.needsMove = false
         model.duplicate = false
+        model.stillRegistered = stillRegistered
         model.failed = true
         ensureWindow()
         window?.makeKeyAndOrderFront(nil)
@@ -132,6 +143,7 @@ final class PreparingWindowController {
     /// actual fix rather than a Try Again that cannot succeed.
     func showFailedNeedsMove(onDiskImage: Bool = false) {
         model.duplicate = false
+        model.stillRegistered = false
         model.failed = true
         model.needsMove = true
         model.onDiskImage = onDiskImage
@@ -144,6 +156,7 @@ final class PreparingWindowController {
     func showDuplicate(otherPath: String?) {
         model.failed = false
         model.needsMove = false
+        model.stillRegistered = false
         model.duplicate = true
         model.otherPath = otherPath
         ensureWindow()

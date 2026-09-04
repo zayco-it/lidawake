@@ -770,22 +770,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if armed { helperClient.setDisableSleepSync(false) }   // never leave sleep disabled behind
         stopArmedWatchers(); armed = false
-        let helperRemoved = helperManager.unregister()
+        let unregistered = helperManager.unregister()
         let loginItemRemoved = LoginItem.unregister()
-        let removed = helperRemoved && loginItemRemoved
         if let domain = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: domain)
         }
+        // The settings really are gone by this line. Whether the DAEMON is gone is a
+        // separate claim, and one we have to watch happen rather than assume — a
+        // non-throwing unregister() is not evidence. See confirmHelperGone.
+        confirmHelperGone { [weak self] gone in
+            self?.finishUninstall(helperGone: unregistered && gone,
+                                  loginItemRemoved: loginItemRemoved)
+        }
+    }
+
+    /// Wait until the daemon registration is provably gone, or the budget runs out.
+    ///
+    /// `unregister()` returning without throwing is NOT evidence that anything was
+    /// removed — that is the whole of issue #2. `SMAppService` can report `.enabled`
+    /// over a helper that never runs, and it can keep reporting it after a successful
+    /// uninstall. So the only thing we will call "removed" is a status we have actually
+    /// watched leave.
+    ///
+    /// It polls because the opposite mistake is just as bad: `status` can lag a
+    /// perfectly good unregister by a moment, and the app quits immediately after this,
+    /// so a false alarm would be the last thing lidawake ever said to that user. ~2s.
+    private func confirmHelperGone(attemptsLeft: Int = 8, _ done: @escaping (Bool) -> Void) {
+        if Self.registrationIsGone(helperManager.state) { done(true); return }
+        guard attemptsLeft > 1 else { done(false); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { done(false); return }
+            self.confirmHelperGone(attemptsLeft: attemptsLeft - 1, done)
+        }
+    }
+
+    /// Proven-clean is a deliberately short list. Anything else — still `.enabled`,
+    /// `.requiresApproval`, `.unknown` — is unproven and gets the honest dialog.
+    /// Under-claiming costs a sentence the user reads once; over-claiming is a false
+    /// statement to someone who just asked us to remove our software.
+    private static func registrationIsGone(_ state: HelperManager.State) -> Bool {
+        switch state {
+        case .notRegistered, .notFound: return true
+        case .enabled, .requiresApproval, .unknown: return false
+        }
+    }
+
+    private func finishUninstall(helperGone: Bool, loginItemRemoved: Bool) {
+        let removed = helperGone && loginItemRemoved
         let done = NSAlert()
         if removed {
             done.messageText = "lidawake removed"
             done.informativeText = "The background helper is gone and your settings were cleared. Drag lidawake to the Trash to finish. Quitting now\u{2026}"
             done.addButton(withTitle: "OK")
         } else {
-            // Don't claim a clean removal we didn't achieve — macOS can refuse to
-            // drop the registration, and it then lingers in Login Items.
-            done.messageText = "lidawake\u{2019}s settings were cleared"
-            done.informativeText = "Your Mac will sleep normally again, but macOS didn\u{2019}t remove lidawake\u{2019}s background item. You can switch it off in System Settings \u{203A} Login Items.\n\nAfterwards, drag lidawake to the Trash to finish."
+            // Don't claim a clean removal we didn't achieve. macOS can refuse to drop
+            // the registration — and, worse, can accept the call and go on reporting the
+            // daemon as registered anyway, which is what this branch now catches.
+            done.messageText = "lidawake\u{2019}s settings were cleared, but macOS still lists its background item"
+            done.informativeText = "Your Mac will sleep normally again, and lidawake won\u{2019}t turn it back on. macOS still shows lidawake under Login Items as a background item \u{2014} switch it off there to finish removing it.\n\nAfterwards, drag lidawake to the Trash to finish."
             done.addButton(withTitle: "Open Login Items\u{2026}")
             done.addButton(withTitle: "OK")
         }
@@ -907,7 +949,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // from, no amount of retrying will help — name the real cause.
                 if err.isUnreachable, InstallLocation.cannotHostHelper {
                     self.preparingWindow.showFailedNeedsMove()
-                } else if err.isUnreachable { self.preparingWindow.showFailed() }
+                } else if err.isUnreachable {
+                    // "Registered but dead" is a different dead end from "not switched
+                    // on", and the generic text sends the user to switch on something
+                    // that is already on. Issue #2, fix 2.
+                    self.preparingWindow.showFailed(stillRegistered: self.helperManager.state == .enabled)
+                }
                 else { self.preparingWindow.close(); self.notify("Couldn\u{2019}t turn on", err.message) }
             }
         }

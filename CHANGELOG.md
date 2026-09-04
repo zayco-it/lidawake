@@ -3,6 +3,11 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.6] — 2026-09-04
+
+- Uninstall now checks that macOS actually dropped lidawake's background item, instead of assuming it worked because the request didn't fail. If the item is still registered afterwards, lidawake says so and points you at the one switch that finishes the job — rather than reporting a clean removal it never confirmed. Removing an app shouldn't leave a background item behind, and it certainly shouldn't tell you it hasn't.
+- When lidawake's helper is registered but never answers, it now says that, instead of asking you to switch on something that is already switched on. The old message sent you to System Settings to turn on a background item you would have found already turned on — the one piece of advice that could not have helped in the situation that produced it.
+
 ## [1.4.5] — 2026-09-04
 
 - Fixed lidawake asking you to finish setting it up after an update, on a Mac where it was already set up — and then sending you to System Settings to switch on a background item that was already switched on. lidawake now asks its background helper whether it is actually working before it says anything about setup, instead of trusting a macOS status that can be wrong in both directions. A helper that is slow to answer after an update is still reconnected quietly in the background, exactly as before; what has changed is that the menu no longer contradicts that by telling you to go and redo it by hand.
