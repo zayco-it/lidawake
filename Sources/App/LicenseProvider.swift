@@ -23,7 +23,7 @@ struct LicenseRecord: Codable, Equatable {
 
 enum LicenseError: Error {
     case invalidKey             // unknown / wrong-product / cancelled key
-    case noActivationsLeft      // all seats (3) already used
+    case noActivationsLeft      // every seat on the license already used (1- and 3-Mac tiers exist)
     case expired                // license lapsed
     case offline                // couldn't reach the server
     case server(String)         // server said no, with a reason
@@ -31,7 +31,7 @@ enum LicenseError: Error {
     var message: String {
         switch self {
         case .invalidKey:        return "That license key wasn\u{2019}t recognized. Check for typos and try again."
-        case .noActivationsLeft: return "This license is already active on the maximum number of Macs. Deactivate it on another Mac first."
+        case .noActivationsLeft: return "This license is already active on the maximum number of Macs. Free one up at customers.freemius.com \u{2014} open Activations and deactivate a Mac you no longer use. The link and your password are in your purchase email."
         case .expired:           return "This license has expired."
         case .offline:           return "Couldn\u{2019}t reach the licensing server. Check your internet connection and try again."
         case .server(let m):     return m
