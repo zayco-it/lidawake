@@ -32,7 +32,10 @@ struct LicenseView: View {
                 // the final total varies by country — the checkout page shows the real price.
                 Button("Buy lidawake\u{2026}") { controller.openBuyPage() }
                     .controlSize(.large)
-                Text("One-time purchase \u{00B7} up to 3 Macs \u{00B7} 14-day money-back guarantee")
+                // No Mac count. The app cannot know which tier someone is about to buy,
+                // the checkout shows both, and "up to 3 Macs" went stale the day the
+                // one-Mac tier shipped — in front of the person about to pay for it.
+                Text("One-time purchase \u{00B7} 14-day money-back guarantee")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
 
                 Divider().padding(.vertical, 2)
