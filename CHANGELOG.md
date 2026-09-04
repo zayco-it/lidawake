@@ -3,7 +3,7 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## [1.4.5] — 2026-09-03
+## [1.4.5] — 2026-09-04
 
 - Fixed lidawake asking you to finish setting it up after an update, on a Mac where it was already set up — and then sending you to System Settings to switch on a background item that was already switched on. lidawake now asks its background helper whether it is actually working before it says anything about setup, instead of trusting a macOS status that can be wrong in both directions. A helper that is slow to answer after an update is still reconnected quietly in the background, exactly as before; what has changed is that the menu no longer contradicts that by telling you to go and redo it by hand.
 - **Keep my Mac awake** now stays available while the helper is reconnecting. It used to be greyed out in precisely that situation, which closed off lidawake's own repair — the one thing that would have fixed it — and left you with nothing to do except the thing it was wrongly asking for.
