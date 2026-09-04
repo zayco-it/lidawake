@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.8] — 2026-09-04
+
+- Pressing Return after pasting your license key now activates it. It used to close the window instead, leaving the key untried and nothing on screen to say so — on the one screen where you can least afford to wonder whether anything happened. Escape closes the window now, which is what Escape is for.
+
 ## [1.4.7] — 2026-09-04
 
 - The license key box no longer shows a made-up example key. It used to hint at a format like XXXX-XXXX-XXXX-XXXX, which looks nothing like the keys actually issued — so the only clue the box offered was telling people holding a perfectly good key that theirs was the wrong shape, before they had even tried it. It now simply says to paste your key.

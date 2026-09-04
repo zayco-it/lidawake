@@ -51,8 +51,15 @@ struct LicenseView: View {
                     TextField("Paste your license key", text: $key)
                         .textFieldStyle(.roundedBorder).disabled(busy)
                         .onSubmit(activate)
+                    // Return belongs to Activate while there is a key to activate. Close
+                    // used to own .defaultAction, so pasting a key and pressing Return —
+                    // the obvious thing to do with one field and one button — dismissed the
+                    // window without trying the key, and on this screen the user cannot tell
+                    // that nothing happened. A disabled Activate simply swallows Return,
+                    // which is right: there is nothing to submit.
                     Button(busy ? "\u{2026}" : "Activate", action: activate)
                         .disabled(busy || key.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .keyboardShortcut(.defaultAction)
                 }
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(.red)
@@ -60,8 +67,13 @@ struct LicenseView: View {
                 }
             }
 
+            // Default action only where nothing else wants Return: once activation has
+            // succeeded there is no key field left, so Done can take it back. Before that,
+            // Escape is the way out — the standard gesture for dismissing a panel, and it
+            // cannot be confused with submitting.
             Button(activated ? "Done" : "Close") { onChange(); onClose() }
-                .keyboardShortcut(.defaultAction).controlSize(.large).padding(.top, 4)
+                .keyboardShortcut(activated ? .defaultAction : .cancelAction)
+                .controlSize(.large).padding(.top, 4)
         }
         .padding(28).frame(width: 400)
     }
