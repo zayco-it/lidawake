@@ -40,7 +40,12 @@ struct LicenseView: View {
                 Text("Already bought? Enter your license key:")
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
-                    TextField("XXXX-XXXX-XXXX-XXXX", text: $key)
+                    // No format hint on purpose. The old XXXX-XXXX-XXXX-XXXX was invented
+                    // and Freemius keys look nothing like it, so it read as "your key is the
+                    // wrong shape" to someone holding a perfectly good one. A real example
+                    // would just move the problem: it would be a second thing to keep in step
+                    // with whatever Freemius issues. Say what to do instead.
+                    TextField("Paste your license key", text: $key)
                         .textFieldStyle(.roundedBorder).disabled(busy)
                         .onSubmit(activate)
                     Button(busy ? "\u{2026}" : "Activate", action: activate)
