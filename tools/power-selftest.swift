@@ -27,6 +27,9 @@ struct Case {
 
 let UNPLUG = "it was unplugged from power"
 let LIMIT  = "the battery reached your \(FLOOR)% limit"
+// On AC the floor was already crossed before the drain began, so the off-AC
+// wording would be wrong. These two must never collapse back into one string.
+let FALLING = "the battery is below your \(FLOOR)% limit and still falling"
 
 @main struct PowerSelfTest {
     static func main() {
@@ -49,10 +52,12 @@ let LIMIT  = "the battery reached your \(FLOOR)% limit"
                  why: "FIX: same, with battery use not allowed — still on AC"),
 
             // ---- THE ADDITION: on AC below the floor AND draining → floor applies. ----
-            Case(onAC: true,  pct: 15, allow: true,  draining: true,  expect: LIMIT,
+            Case(onAC: true,  pct: 15, allow: true,  draining: true,  expect: FALLING,
                  why: "ADDITION: underpowered adapter, charge actually falling"),
-            Case(onAC: true,  pct: 15, allow: false, draining: true,  expect: LIMIT,
+            Case(onAC: true,  pct: 15, allow: false, draining: true,  expect: FALLING,
                  why: "ADDITION: same; still on AC so the unplug reason must not fire"),
+            Case(onAC: true,  pct: 5,  allow: true,  draining: true,  expect: FALLING,
+                 why: "WORDING: on AC the message does not change with how far below"),
 
             // ---- Off AC, above the floor: only the battery preference matters. ----
             Case(onAC: false, pct: 50, allow: true,  draining: true,  expect: nil,

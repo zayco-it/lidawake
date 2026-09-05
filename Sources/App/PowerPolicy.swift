@@ -103,7 +103,15 @@ final class PowerPolicy {
         // once: this is re-evaluated on the power-source change, and by then onAC
         // is false.
         if (!onAC || draining), percent >= 0, percent < floor {
-            return "the battery reached your \(floor)% limit"
+            // Two wordings, because the two situations are not the same event.
+            // Off AC the charge fell to the limit while running, so it *reached*
+            // it. On AC it was already below the limit before the drain started —
+            // nothing was crossed just now — so say where it is and which way it
+            // is going. Deliberately not blaming the charger: a heavy workload
+            // does this too, and the app cannot tell which.
+            return onAC
+                ? "the battery is below your \(floor)% limit and still falling"
+                : "the battery reached your \(floor)% limit"
         }
         return nil
     }
