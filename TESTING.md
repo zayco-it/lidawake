@@ -208,8 +208,14 @@ On **AC power**, no external display:
       window.
 - [ ] Enable **Keep going on battery power**: on battery, above the floor, arm →
       it works (glyph blue).
-- [ ] Floor: set the floor above the current charge → arm is refused with the
-      battery message.
+- [ ] Floor, **on battery**: set the floor above the current charge → arm is
+      refused with the battery message.
+- [ ] Floor, **on AC**: same setting, plugged in and charging → arming
+      **succeeds**. The floor guards against exhaustion, which cannot happen while
+      charge is going in. (Regression guard: this used to refuse.)
+- [ ] *Not forceable without an underpowered adapter:* on AC while the battery is
+      genuinely draining, the floor should still apply. Covered in
+      `tools/power-selftest.swift` instead.
 - [ ] **Live auto-disarm:** with battery OFF in settings, arm on AC, then unplug →
       it auto-disarms and restores sleep, with a notice.
 - [ ] **Persistence:** change a setting, quit, relaunch → the setting stuck.
