@@ -181,9 +181,16 @@ On **AC power**, no external display:
 
 ## 4. Screen-off when the lid closes
 
-- [ ] Setting **Turn the screen off** ON (default): arm, close lid → the internal
-      display goes dark while the system stays awake (heartbeat keeps ticking).
-- [ ] Setting OFF: arm, close lid → display stays lit. (Turn it back on after.)
+> The **Turn the screen off** setting was removed — this is unconditional now.
+> There was no configuration in which switching it off helped: with an external
+> display `handleLidClosed()` returns before it was ever read, and without one it
+> only chose whether to light a panel nobody can see.
+
+- [ ] Arm, close the lid with **no external display** → the internal display goes
+      dark while the system stays awake (heartbeat keeps ticking).
+- [ ] Arm, close the lid **with an external display attached** → BOTH screens are
+      left alone by lidawake; the external stays lit and usable. (macOS turns the
+      built-in panel off itself in clamshell — that is not lidawake's doing.)
 
 ## 5. Lid-open options
 

@@ -8,7 +8,6 @@ import SwiftUI
 
 enum Settings {
     enum Key {
-        static let screenOffOnLidClose = "screenOffOnLidClose"
         static let allowOnBattery      = "allowOnBattery"
         static let batteryFloorPercent = "batteryFloorPercent"
         static let keepAwakeLidOpen    = "keepAwakeLidOpen"
@@ -17,7 +16,6 @@ enum Settings {
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
-            Key.screenOffOnLidClose: true,
             Key.allowOnBattery:      false,
             Key.batteryFloorPercent: 20,
             Key.keepAwakeLidOpen:    true,
@@ -25,7 +23,6 @@ enum Settings {
         ])
     }
 
-    static var screenOffOnLidClose: Bool { UserDefaults.standard.bool(forKey: Key.screenOffOnLidClose) }
     static var allowOnBattery:      Bool { UserDefaults.standard.bool(forKey: Key.allowOnBattery) }
     static var batteryFloorPercent: Int  { UserDefaults.standard.integer(forKey: Key.batteryFloorPercent) }
     static var keepAwakeLidOpen:    Bool { UserDefaults.standard.bool(forKey: Key.keepAwakeLidOpen) }
@@ -34,7 +31,6 @@ enum Settings {
 
 /// The Settings window content — native toggles, plain language for non-technical users.
 struct SettingsView: View {
-    @AppStorage(Settings.Key.screenOffOnLidClose) private var screenOff = true
     @AppStorage(Settings.Key.allowOnBattery)      private var allowOnBattery = false
     @AppStorage(Settings.Key.batteryFloorPercent) private var floor = 20
     @AppStorage(Settings.Key.keepAwakeLidOpen)    private var keepOpen = true
@@ -47,7 +43,6 @@ struct SettingsView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Section("When you close the lid") {
-                Toggle("Turn the screen off", isOn: $screenOff)
                 Toggle("Keep going on battery power", isOn: $allowOnBattery)
                 if allowOnBattery {
                     Stepper("Stop when the battery reaches \(floor)%", value: $floor, in: 10...90, step: 5)

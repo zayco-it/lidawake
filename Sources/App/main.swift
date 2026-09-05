@@ -740,10 +740,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                    screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
     }
 
-    /// Lid just closed while armed — sleep the display (if the user wants it) so a
-    /// closed lid isn't left backlit. The system stays awake; only the panel sleeps.
+    /// Lid just closed while armed — sleep the built-in panel so a closed lid isn't
+    /// left backlit. The system stays awake.
+    ///
+    /// Unconditional since the "Turn the screen off" setting was removed: there was no
+    /// configuration in which switching it off helped anyone. With an external display
+    /// this returns below without touching anything, so the toggle was inert in
+    /// clamshell; without one it only chose whether to burn power and make heat behind
+    /// a shut lid, which is the very thing the battery warning argues against.
     private func handleLidClosed() {
-        guard armed, Settings.screenOffOnLidClose else { return }
+        guard armed else { return }
         // Clamshell: with an external monitor connected, closing the lid means the
         // user wants to keep using it — never sleep the external. Only sleep the
         // screen when the built-in panel is the only display (nothing to see behind
