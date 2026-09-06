@@ -133,7 +133,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // about staying awake, not about the screen.
             self.wakeSummary.begin(battery: readPowerState().percent)
             self.thermal.resetPeak()
-            self.idleWatcher.start()   // T2.5 — only ever while the lid is shut
+            // IdleWatcher is NOT started. Measured 2026-09-06 in the target
+            // configuration — lid shut, external display, on AC, unattended, with
+            // ordinary apps open — the window averaged 1.56 core-equivalents
+            // against its own 1.0 limit, 54 of 60 samples over. It reads BUSY
+            // permanently, so the auto-off never fires, and the app was claiming
+            // that it did. The detector stays in the tree for a rebuild on signals
+            // that were measured to work (presence, playback, GPU, network); until
+            // then it does not run and nothing promises it.
             self.handleLidClosed()
         }
         lid.onLidOpened    = { [weak self] in
@@ -655,9 +662,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let stillDisabled else { return }   // unreachable — not a trip
             guard !stillDisabled else { return }      // normal case: still armed
             NSLog("[lidawake] helper watchdog restored sleep while we were unresponsive — reconciling to off")
+            self.wakeSummary.cancel()
             self.stopArmedWatchers()
             self.armed = false
             self.refreshItems(); self.updateIcon()
+            // Say so. This is the one stop path that used to go quiet, and
+            // autoSleepIdle() already argues the case against exactly that:
+            // turning lidawake off and leaving the user to discover it is the
+            // surprise every other path takes care to avoid. A notification
+            // rather than an alert, for the same reason — by definition the app
+            // was unresponsive, so nobody is waiting on a modal.
+            self.announce(title: "lidawake turned itself off",
+                          body: "lidawake stopped responding, so its helper handed sleep back to macOS.",
+                          menuLine: "lidawake turned itself off — it stopped responding")
         }
     }
 

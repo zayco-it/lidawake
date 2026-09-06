@@ -167,6 +167,13 @@ copied bundle loses its stapled ticket and Gatekeeper rejects it.
 - [ ] **On:** laptop glyph turns **blue**; menu item shows a checkmark; status
       "On — you can close the lid".
 
+> **Not tested here: the idle auto-off.** As of 1.5.0 `IdleWatcher` is not
+> started, so nothing auto-disarms on inactivity. It was never in this plan, which
+> is consistent with it never having been exercised — and when it was finally
+> measured (2026-09-06) it read BUSY for a whole 30-minute window in the target
+> configuration, so it could not have fired. Restore this section when it is
+> rebuilt.
+
 ## 3. Core — keep awake with the lid closed (the whole point)
 
 On **AC power**, no external display:
@@ -198,8 +205,26 @@ On **AC power**, no external display:
       past the Energy-Saver sleep time → it does **not** idle-sleep.
 - [ ] **Keep the screen on too** ON: while armed and idle, the **display** also
       stays on (doesn't dim/sleep).
-- [ ] Both OFF: arming still keeps lid-**closed** awake, but with the lid open the
-      Mac idles/sleeps normally.
+- [ ] **Also keep my Mac awake** OFF, armed, lid **open**, on **battery** — the one
+      case that says whether `pmset disablesleep 1` blocks *idle* sleep or only
+      *lid-close* sleep. With the toggle off, `disablesleep` is the only thing left
+      holding the Mac, so this isolates it.
+
+      Before starting, prove the isolation or the result means nothing:
+      - `pgrep -x caffeinate` must return **nothing**. Anything holding
+        `PreventUserIdleSystemSleep` — including the `caffeinate -i` that Claude
+        Code and some terminals spawn — prevents idle sleep on its own and the
+        test can only ever "pass".
+      - `pmset -g assertions` must show **no lidawake assertion**.
+      - `pmset -g | grep SleepDisabled` must read **1**.
+
+      Then leave it untouched ~4 min (display sleeps at 2, then the idle timer
+      runs) and read `pmset -g log | grep "Entering Sleep"`.
+
+      **Sleeps** → `disablesleep` is lid-close only, and "Also keep my Mac awake"
+      does real work. **Stays awake** → `disablesleep` covers idle sleep too, that
+      setting is inert, and it should be removed rather than documented.
+- [ ] Both OFF: arming still keeps lid-**closed** awake.
 
 ## 6. Battery policy
 

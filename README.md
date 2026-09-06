@@ -3,9 +3,9 @@
 **Keep your Mac awake — even with the lid closed.** No more books wedged in your MacBook.
 
 lidawake is a tiny menu-bar app that stops your Mac from sleeping when you close the
-lid, so it can keep downloading, backing up, running a task, or playing audio with
+lid, so it can keep downloading, backing up, running a task, with
 the lid shut. One click to turn it on, one to turn it off — and it looks after itself
-in between. It stops on its own when the work is done, backs off if the Mac runs hot,
+in between. It backs off if the Mac runs hot,
 and can't leave your Mac stuck awake if it crashes.
 
 It does a few things, and does them well — made for people who just want to close the
@@ -42,9 +42,6 @@ built to be careful:
   15 seconds, and if check-ins stop for 90 seconds the helper restores normal
   sleep on its own authority. That case matters most, because the thermal and
   battery guards run inside the app and a frozen app freezes them too.
-- **Stops when nothing is happening** — with the lid closed, thirty minutes with no
-  real CPU or network activity and lidawake restores normal sleep and tells you it
-  did. Not configurable, deliberately: the rule you rely on shouldn't have a knob.
 - **Tells you what happened** — open the lid after five minutes or more and it reports
   how long the Mac stayed awake, whether it stayed cool, and what the battery did.
 - **Turns the screen off** when you close the lid.
