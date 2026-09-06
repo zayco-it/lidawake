@@ -201,30 +201,40 @@ On **AC power**, no external display:
 
 ## 5. Lid-open options
 
-- [ ] **Also keep my Mac awake** ON (default): arm, leave the lid open and idle
-      past the Energy-Saver sleep time → it does **not** idle-sleep.
-- [ ] **Keep the screen on too** ON: while armed and idle, the **display** also
-      stays on (doesn't dim/sleep).
-- [ ] **Also keep my Mac awake** OFF, armed, lid **open**, on **battery** — the one
-      case that says whether `pmset disablesleep 1` blocks *idle* sleep or only
-      *lid-close* sleep. With the toggle off, `disablesleep` is the only thing left
-      holding the Mac, so this isolates it.
+> **Lid-open wakefulness is not optional, and nothing in this section changes
+> it.** `Heartbeat.start()` calls `beginActivity(options: .userInitiated)`, and
+> `NSActivityUserInitiated` includes `NSActivityIdleSystemSleepDisabled` — so
+> lidawake holds a `PreventUserIdleSystemSleep` assertion, named "lidawake is
+> keeping this Mac awake", for exactly as long as it is armed, independent of
+> every setting. Established 2026-09-06; see **E0k** in zayco-site's decision log.
+> The two switches below control the **screen**, and nothing else.
 
-      Before starting, prove the isolation or the result means nothing:
-      - `pgrep -x caffeinate` must return **nothing**. Anything holding
-        `PreventUserIdleSystemSleep` — including the `caffeinate -i` that Claude
-        Code and some terminals spawn — prevents idle sleep on its own and the
-        test can only ever "pass".
-      - `pmset -g assertions` must show **no lidawake assertion**.
-      - `pmset -g | grep SleepDisabled` must read **1**.
-
-      Then leave it untouched ~4 min (display sleeps at 2, then the idle timer
-      runs) and read `pmset -g log | grep "Entering Sleep"`.
-
-      **Sleeps** → `disablesleep` is lid-close only, and "Also keep my Mac awake"
-      does real work. **Stays awake** → `disablesleep` covers idle sleep too, that
-      setting is inert, and it should be removed rather than documented.
+- [ ] **Let lidawake manage the screen** ON (default): arm, leave the lid open and
+      idle past the Energy-Saver sleep time → it does **not** idle-sleep. True,
+      but the heartbeat's assertion is what does it — not this switch.
+- [ ] **Keep the screen on** ON: while armed and idle, the **display** also stays
+      on (doesn't dim/sleep). This is the one real lid-open behaviour these two
+      switches control.
+- [ ] **Let lidawake manage the screen** OFF → the **Keep the screen on** row
+      hides and the screen dims normally. Note the screen also dims with the
+      parent ON and the child OFF: the parent only decides whether the choice is
+      offered.
 - [ ] Both OFF: arming still keeps lid-**closed** awake.
+
+### Does `disablesleep` block idle sleep? — NOT ANSWERABLE FROM THIS BUILD
+
+This section used to carry a fourth case claiming that arming with the lid-open
+toggle off left `pmset disablesleep 1` as the only thing holding the Mac, and so
+isolated it. It does not, and the case could never fail — one of its own
+preconditions, "`pmset -g assertions` must show no lidawake assertion", cannot be
+satisfied while armed, because the heartbeat creates one. It was run that way on
+2026-09-06, reported "stays awake", and the conclusion drawn from it was wrong.
+
+Answering the question needs a build with `Sources/App/Heartbeat.swift` changed
+from `.userInitiated` to `.userInitiatedAllowingIdleSystemSleep`. That is **E0k**,
+deferred out of 1.4.9 on purpose: it shares a code path with the watchdog-disarm
+change shipped here, and running both in one release would make a regression
+impossible to attribute. Do not re-add a case here until that build exists.
 
 ## 6. Battery policy
 
@@ -314,8 +324,8 @@ Then, in that state:
 - [ ] Opens from menu **Settings…** and with **⌘,** while the window is focused.
 - [ ] **Keep going on battery power** ON → a floor stepper and the heat warning
       appear; OFF → they hide.
-- [ ] **Also keep my Mac awake** ON → **Keep the screen on too** appears; OFF → it
-      hides.
+- [ ] **Let lidawake manage the screen** ON → **Keep the screen on** appears;
+      OFF → it hides.
 - [ ] Toggling any switch persists (re-open the window, or relaunch, to confirm).
 
 ---

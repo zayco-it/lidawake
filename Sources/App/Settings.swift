@@ -52,12 +52,12 @@ struct SettingsView: View {
                 }
             }
             Section("When the lid is open") {
-                Toggle("Also keep my Mac awake", isOn: $keepOpen)
+                Toggle("Let lidawake manage the screen", isOn: $keepOpen)
                 if keepOpen {
-                    Toggle("Keep the screen on too", isOn: $screenOnOpen)
-                    Text("Otherwise the screen dims to save power while your Mac stays awake.")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    Toggle("Keep the screen on", isOn: $screenOnOpen)
                 }
+                Text("Your Mac stays awake either way \u{2014} this is only about the screen.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

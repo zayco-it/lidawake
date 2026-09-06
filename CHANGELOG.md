@@ -3,6 +3,15 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.9] — 2026-09-06
+
+- lidawake no longer refuses to turn on while your Mac is plugged in and charging below your battery limit — and then tells you to charge it, which is what you were already doing. That limit exists to stop the battery running out, and it cannot run out while charge is going in. It now applies whenever charge is actually being lost: on battery always, and while plugged in only if your Mac is draining anyway, which an underpowered adapter or a busy hub really can do.
+- When the battery is below your limit and still falling while plugged in, lidawake now says where the battery is instead of announcing it reached a limit it was already past. On battery the old wording stays, because there it is accurate — the charge did fall to your limit while running.
+- The "Turn the screen off" setting is gone. There was no situation in which switching it off helped you. With an external display connected lidawake never touched your screens anyway, and without one the setting only decided whether to light a panel behind a shut lid that nobody can see — spending power and making heat for nothing, which is the exact thing the battery warning below it argues against. Closing the lid now sleeps the built-in screen, and an external display is left alone, as before. Removing that row also fixed a line of explanation that had been cut off the bottom of the Settings window in every release so far, whenever both sections were open.
+- The lid-open setting now describes what lidawake actually does. It used to read "Also keep my Mac awake", which offered a choice lidawake does not have: while it is on, your Mac stays awake with the lid open too. What you can genuinely choose is what happens to the screen, so that is what the setting now says.
+- lidawake now tells you when its helper has turned it off. If lidawake stops responding, the helper hands sleep back to macOS after ninety seconds — that has always been true, and it is the safety net that makes lidawake safe to leave running. But lidawake used to notice and flip itself quietly to off, leaving you to discover it. Every other way it stops explains itself; this one does now too.
+- The automatic "nothing is happening, let it sleep" cut-off no longer runs. Measured in the situation it was built for — lid shut, unattended, ordinary apps open — it read "busy" permanently and so never once fired. It was not a threshold set slightly wrong; the thing it counted cannot tell an idle Mac from a working one. It will return built on measurements that do work, and until then nothing in lidawake claims it is there.
+
 ## [1.4.8] — 2026-09-04
 
 - Pressing Return after pasting your license key now activates it. It used to close the window instead, leaving the key untried and nothing on screen to say so — on the one screen where you can least afford to wonder whether anything happened. Escape closes the window now, which is what Escape is for.
