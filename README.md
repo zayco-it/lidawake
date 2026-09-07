@@ -66,9 +66,9 @@ became paid, it stays free for you — forever.
 
 **Why pay for something open source?** Not for a secret — the trick (`pmset disablesleep`) is
 well known, and free tools use it too. Keeping a Mac awake is the easy part; stopping safely is
-the product. You're paying for what runs when nobody is watching: the thermal and battery
-guards, the automatic stop once the work is done, and a privileged helper that restores normal
-sleep even if the app crashes, is force-quit, or freezes. Plus the packaging — notarized so
+the product. You're paying for what runs when nobody is watching: the thermal cut-off, the
+battery floor, and a privileged helper that restores normal sleep even if the app crashes,
+is force-quit, or freezes. Plus the packaging — notarized so
 macOS trusts it on the first launch, a signed helper you approve with one click rather than a
 `sudo` script or a sudoers grant — and a real company to answer if something breaks. Prefer to
 build it yourself? Please do — that's what the source is for.
