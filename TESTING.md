@@ -167,7 +167,7 @@ copied bundle loses its stapled ticket and Gatekeeper rejects it.
 - [ ] **On:** laptop glyph turns **blue**; menu item shows a checkmark; status
       "On — you can close the lid".
 
-> **Not tested here: the idle auto-off.** As of 1.5.0 `IdleWatcher` is not
+> **Not tested here: the idle auto-off.** As of 1.4.9 `IdleWatcher` is not
 > started, so nothing auto-disarms on inactivity. It was never in this plan, which
 > is consistent with it never having been exercised — and when it was finally
 > measured (2026-09-06) it read BUSY for a whole 30-minute window in the target
