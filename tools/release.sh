@@ -14,6 +14,15 @@
 # and ~/projects/zayco-site checked out (for the appcast + deploy).
 #
 # Notarization can take a while — run this in the background.
+#
+# DO NOT PIPE THIS SCRIPT INTO tee (or anything else) without pipefail. A shell
+# pipeline reports the LAST command's status, so `release.sh | tee log` exits 0
+# even when this script aborts — a half-finished release then looks like a clean
+# one. That happened on 1.4.10: the GitHub release and tag were published, the
+# site deploy was refused for a dirty tree, and the run reported success.
+# Redirect instead:      ./tools/release.sh > release.log 2>&1
+# Or, if you must pipe:  set -o pipefail; ./tools/release.sh 2>&1 | tee release.log
+# The same applies to zayco-site's deploy.sh.
 set -eu
 cd "$(dirname "$0")/.."
 
