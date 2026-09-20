@@ -45,25 +45,49 @@ release; the rest are good coverage.
 >
 > **Not re-verified, and these are the two that matter:** a *fresh* install from a
 > downloaded DMG, and the Sparkle update path (§8). Both need hardware, and both
-> are where macOS 27 is most likely to bite. **Two of the three links in that
-> chain are confirmed on shipping 27.0 (build 26A428), 2026-09-20:**
+> are where macOS 27 is most likely to bite. A macOS 27 regression breaking
+> privileged helpers was chased to a conclusion on 2026-09-20 on shipping 27.0
+> (26A428). **lidawake is NOT affected, and the reason is worth keeping.**
 >
-> 1. Copying the app out of a quarantined DMG puts `com.apple.quarantine` on
+> Two of the three links are real:
+>
+> 1. Copying the app out of a quarantined DMG does put `com.apple.quarantine` on
 >    `Contents/Library/LaunchDaemons/it.zayco.lidawake.helper.plist` — verified
->    with both `ditto` and `cp -R`.
-> 2. **launchd refuses a plist carrying that attribute.** Verified directly with
->    a throwaway LaunchAgent: bootstrapping the quarantined plist fails
->    `Bootstrap failed: 5: Input/output error`; run `xattr -d com.apple.quarantine`
->    on the same file, change nothing else, and it loads and runs.
-> 3. **UNKNOWN — and it is the whole question:** whether Gatekeeper strips
->    quarantine from the *nested* plist at first launch, before `SMAppService`
->    registers. If it does, the chain breaks and installs are fine. This Mac
->    cannot answer it — its `/Applications` copy was never downloaded here (no
->    row in `QuarantineEventsV2`), so the absence of quarantine on it is not
->    evidence that anything was cleared.
+>    with both `ditto` and `cp -R`. Gatekeeper does **not** clear it from nested
+>    files at first launch, verified with a notarized third-party app installed
+>    the ordinary way.
+> 2. launchd does refuse a plist carrying that attribute — `launchctl bootstrap`
+>    on a quarantined LaunchAgent fails `Bootstrap failed: 5: Input/output
+>    error`, and the same file loads after nothing but `xattr -d`.
+> 3. **But link 3 does not connect, because `SMAppService` never takes that
+>    path.** Its jobs are parsed by `smd` and submitted to launchd as a job
+>    dictionary — `launchctl print system/it.zayco.lidawake.helper` shows
+>    `path = (submitted by smd.…)`, where a legacy daemon shows a real
+>    `/Library/LaunchDaemons/….plist`. The quarantine check lives in launchd's
+>    read-a-plist-from-disk path, which is never reached.
 >
-> If it is broken the symptom is “Getting lidawake ready…” forever plus
-> `helper register failed` in the log, and the workaround is one command:
+> Proven, not reasoned: a Developer ID–signed probe app registering an embedded
+> LaunchAgent through `SMAppService` registered and **ran** with the nested plist
+> quarantined, and again with the agent executable quarantined too. The signature
+> stayed valid throughout (quarantine is excluded from code signing), and `smd`
+> left the attribute in place rather than stripping it — it simply does not
+> consult it.
+>
+> **Why SMJobBless apps do break:** they *copy* the helper and its plist out of
+> the quarantined bundle into `/Library/PrivilegedHelperTools` and
+> `/Library/LaunchDaemons`, carrying the attribute with them — and launchd then
+> file-loads those copies. lidawake's helper never leaves the bundle, which is
+> what `BundleProgram` buys. **Do not “simplify” the helper to a copy-out
+> install.**
+>
+> Residual gap, stated so nobody assumes it was covered: the probe was a
+> gui-domain *agent*, not a system-domain root *daemon*. The load mechanism, not
+> the domain, was the deciding variable in both directions — a gui-domain agent
+> was refused via the file path and allowed via the submit path — but a real
+> daemon was never tested, which would need a clean machine.
+>
+> If a helper ever does fail this way the symptom is “Getting lidawake ready…”
+> forever plus `helper register failed`, and the workaround is one command:
 > `xattr -dr com.apple.quarantine /Applications/lidawake.app`.
 >
 > **`./build.sh` builds again on macOS 27 with Command Line Tools alone**, as of

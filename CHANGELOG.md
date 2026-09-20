@@ -3,6 +3,12 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [1.4.10] — 2026-09-20
+
+- **Six lines of explanation were being cut off mid-sentence, and now read in full.** The worst was the message shown when a license key isn't accepted: it told you the key wasn't recognized and then stopped, exactly where it was about to say what to do — copy the key again from your purchase email, and write to us if it still won't take. That advice was added in 1.4.7 and has never once been readable. The Welcome window lost four lines the same way, including the whole of the reply to "I've turned it on" that tells you what to check when the background item still isn't on, and the buy screen cut off how many days of your trial are left.
+- **Nothing about the wording changed — the words were always there.** They were drawn wider than the window and quietly truncated, which is why every check we had passed: a sentence nobody can read is still a sentence that appeared. Testing now measures whether text fits, not just whether it showed up.
+- **This is the same fault that was found and fixed once before**, in the "Getting lidawake ready" window in 1.1.7. The fix was never carried across to the two windows that had it too. Both now have it, and a check that fails the build catches the next one.
+
 ## [1.4.9] — 2026-09-06
 
 - lidawake no longer refuses to turn on while your Mac is plugged in and charging below your battery limit — and then tells you to charge it, which is what you were already doing. That limit exists to stop the battery running out, and it cannot run out while charge is going in. It now applies whenever charge is actually being lost: on battery always, and while plugged in only if your Mac is draining anyway, which an underpowered adapter or a busy hub really can do.
