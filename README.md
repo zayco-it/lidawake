@@ -103,6 +103,14 @@ Command Line Tools only — no Xcode needed.
 SIGN=1 ./build.sh          # signed build (requires a Developer ID certificate)
 ```
 
+## Security
+
+lidawake installs a root LaunchDaemon and changes a system-wide power setting, so
+if you find a vulnerability I want to hear about it. Email **security@zayco.it**,
+or use GitHub's private vulnerability reporting — please don't open a public
+issue. [SECURITY.md](SECURITY.md) covers what is in scope, what isn't, and what
+to expect back (no SLA, no bounty).
+
 ## License
 
 MIT © zaYco s. r. o. — see [LICENSE](LICENSE).
