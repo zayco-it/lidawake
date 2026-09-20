@@ -8,7 +8,9 @@ dist/
 *private_key*
 *.p12
 
-# Private working docs — business strategy / enrollment notes stay OUT of the public repo
+# Private working docs — business strategy / enrollment notes stay OUT of the
+# public repo. They live in the private zayco-it/zayco-plans repo; these entries
+# remain as guards against a copy reappearing here.
 PLAN.md
 docs/
 
