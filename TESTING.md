@@ -45,16 +45,34 @@ release; the rest are good coverage.
 >
 > **Not re-verified, and these are the two that matter:** a *fresh* install from a
 > downloaded DMG, and the Sparkle update path (§8). Both need hardware, and both
-> are where macOS 27 is most likely to bite. Copying the app out of a quarantined
-> DMG puts `com.apple.quarantine` on
-> `Contents/Library/LaunchDaemons/it.zayco.lidawake.helper.plist` — confirmed
-> 2026-09-20 — which is the documented precondition for a macOS 27 regression
-> where launchd refuses to spawn a daemon whose plist carries that attribute.
+> are where macOS 27 is most likely to bite. **Two of the three links in that
+> chain are confirmed on shipping 27.0 (build 26A428), 2026-09-20:**
 >
-> **`./build.sh` does not build on macOS 27 with Command Line Tools alone.**
-> SwiftUI's `@State` is an external macro in Swift 6.4 and the CLT ships no
-> SwiftUI macro plugin, so `Onboarding.swift` and `LicenseWindow.swift` fail to
-> compile. No release can be cut from this machine until that is resolved.
+> 1. Copying the app out of a quarantined DMG puts `com.apple.quarantine` on
+>    `Contents/Library/LaunchDaemons/it.zayco.lidawake.helper.plist` — verified
+>    with both `ditto` and `cp -R`.
+> 2. **launchd refuses a plist carrying that attribute.** Verified directly with
+>    a throwaway LaunchAgent: bootstrapping the quarantined plist fails
+>    `Bootstrap failed: 5: Input/output error`; run `xattr -d com.apple.quarantine`
+>    on the same file, change nothing else, and it loads and runs.
+> 3. **UNKNOWN — and it is the whole question:** whether Gatekeeper strips
+>    quarantine from the *nested* plist at first launch, before `SMAppService`
+>    registers. If it does, the chain breaks and installs are fine. This Mac
+>    cannot answer it — its `/Applications` copy was never downloaded here (no
+>    row in `QuarantineEventsV2`), so the absence of quarantine on it is not
+>    evidence that anything was cleared.
+>
+> If it is broken the symptom is “Getting lidawake ready…” forever plus
+> `helper register failed` in the log, and the workaround is one command:
+> `xattr -dr com.apple.quarantine /Applications/lidawake.app`.
+>
+> **`./build.sh` builds again on macOS 27 with Command Line Tools alone**, as of
+> 2026-09-20. It had failed with 12 errors: SwiftUI's `@State` is an external
+> macro in Swift 6.4 and the CLT ships no SwiftUI macro plugin. The six `@State`
+> declarations in `Onboarding.swift` and `LicenseWindow.swift` are now
+> hand-expanded to the storage the property wrapper always desugared to, so the
+> macro spelling is gone. **Do not "tidy" them back to `@State`** — it breaks the
+> CLT-only build the README promises.
 
 ## Results log
 
