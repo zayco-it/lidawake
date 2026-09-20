@@ -7,6 +7,55 @@ release; the rest are good coverage.
 > Why manual: the product is a physical-behaviour app (closing the lid, pulling
 > power). Most of it can't be unit-tested — it has to be exercised on a real Mac.
 
+> **Read every line end to end — do not just confirm it appeared.** Six explanatory
+> lines shipped truncated from 1.0.0 through 1.4.9, including the licence-activation
+> error that tells a paying customer what to do when their key will not take. They
+> shipped because the checks here ask whether text is *present*, and a truncated
+> string is present: the first-run check in the Quick regression pass passes on a
+> sentence nobody can read, and the 1.0.2 entry in the results log quotes one of
+> them mid-truncation without noticing.
+>
+> `tools/ui-selftest.swift` now catches the geometric half of this automatically —
+> it fails if a string cannot fit the window width and is not free to wrap:
+>
+> ```sh
+> swiftc -O tools/ui-selftest.swift -framework AppKit \
+>     -o /tmp/lidawake-ui-selftest && /tmp/lidawake-ui-selftest
+> ```
+>
+> It cannot tell you the words are *right*. That half is still your eyes.
+
+> ## ⚠ Every result below was taken on macOS 26 (Tahoe) or earlier
+>
+> This Mac moved to **macOS 27.0 (Golden Gate, build 26A428)** on 2026-09-20. The
+> log has **not** been re-run against it. Spot-checked on 27 that day — a sample,
+> not a pass:
+>
+> | checked on 27 | result |
+> |---|---|
+> | `pmset disablesleep` | works; still absent from the man page |
+> | `AppleSmartBattery` → `InstantAmperage` | present, signed value reads correctly |
+> | SMAppService daemon + XPC signature check | survived the upgrade, helper runs from boot |
+> | arm → `SleepDisabled 1` → clean quit → `0` | pass |
+> | force-kill dead man's switch | pass |
+> | `tools/power-selftest.swift` | 19/19 |
+> | Login Items row | survived the upgrade |
+> | Gatekeeper / notarization | still `accepted`, Notarized Developer ID |
+> | `arm64-apple-macos13` target | still compiles and runs on SDK 27 |
+>
+> **Not re-verified, and these are the two that matter:** a *fresh* install from a
+> downloaded DMG, and the Sparkle update path (§8). Both need hardware, and both
+> are where macOS 27 is most likely to bite. Copying the app out of a quarantined
+> DMG puts `com.apple.quarantine` on
+> `Contents/Library/LaunchDaemons/it.zayco.lidawake.helper.plist` — confirmed
+> 2026-09-20 — which is the documented precondition for a macOS 27 regression
+> where launchd refuses to spawn a daemon whose plist carries that attribute.
+>
+> **`./build.sh` does not build on macOS 27 with Command Line Tools alone.**
+> SwiftUI's `@State` is an external macro in Swift 6.4 and the CLT ships no
+> SwiftUI macro plugin, so `Onboarding.swift` and `LicenseWindow.swift` fail to
+> compile. No release can be cut from this machine until that is resolved.
+
 ## Results log
 
 **2026-07-04 — 1.1.0 (paid licensing: 14-day trial → Freemius license key, grandfather 1.0.x), tested BEFORE

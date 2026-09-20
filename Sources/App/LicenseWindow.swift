@@ -9,10 +9,34 @@ struct LicenseView: View {
     let controller: LicenseController
     let onChange: () -> Void      // tell the menu to refresh (status may have changed)
     let onClose: () -> Void
-    @State private var key = ""
-    @State private var busy = false
-    @State private var error: String?
-    @State private var activated = false
+    // Hand-expanded `@State`. SwiftUI's `@State` became an external macro in
+    // Swift 6.4 (`SwiftUIMacros.StateMacro`), and the Command Line Tools ship no
+    // SwiftUI macro plugin — so the macro spelling cannot be compiled without
+    // Xcode, and the README promises a CLT-only build. This is the storage the
+    // property wrapper always desugared to: SwiftUI discovers `DynamicProperty`
+    // members by reflection, so the leading underscore is a naming convention,
+    // not the mechanism. Setters must stay `nonmutating` — `body` and button
+    // actions assign to these from a non-mutating context.
+    private var _key = State(initialValue: "")
+    private var key: String {
+        get { _key.wrappedValue }
+        nonmutating set { _key.wrappedValue = newValue }
+    }
+    private var _busy = State(initialValue: false)
+    private var busy: Bool {
+        get { _busy.wrappedValue }
+        nonmutating set { _busy.wrappedValue = newValue }
+    }
+    private var _error = State<String?>(initialValue: nil)
+    private var error: String? {
+        get { _error.wrappedValue }
+        nonmutating set { _error.wrappedValue = newValue }
+    }
+    private var _activated = State(initialValue: false)
+    private var activated: Bool {
+        get { _activated.wrappedValue }
+        nonmutating set { _activated.wrappedValue = newValue }
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -48,7 +72,7 @@ struct LicenseView: View {
                     // wrong shape" to someone holding a perfectly good one. A real example
                     // would just move the problem: it would be a second thing to keep in step
                     // with whatever Freemius issues. Say what to do instead.
-                    TextField("Paste your license key", text: $key)
+                    TextField("Paste your license key", text: _key.projectedValue)
                         .textFieldStyle(.roundedBorder).disabled(busy)
                         .onSubmit(activate)
                     // Return belongs to Activate while there is a key to activate. Close
@@ -64,6 +88,7 @@ struct LicenseView: View {
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(.red)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
@@ -84,6 +109,7 @@ struct LicenseView: View {
             Text("You\u{2019}re on the free trial").font(.headline)
             Text("\(d) day\(d == 1 ? "" : "s") left. Buy now to keep lidawake after the trial ends.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         case .expired:
             Text("Your free trial has ended").font(.headline)
             Text("Buy lidawake to keep your Mac awake with the lid closed.")
