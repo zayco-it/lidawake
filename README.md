@@ -35,13 +35,16 @@ keep a Mac awake with the lid closed.
 Closing the lid blocks your Mac's cooling vent (it's in the hinge), so lidawake is
 built to be careful:
 
-- **Off by default on battery** — opt-in, with a warning, since lid-closed-on-battery runs warm.
+- **Off by default on battery** — opt-in, with a heat note in Settings, since lid-closed-on-battery runs warm.
 - **Thermal cutoff** — if the Mac gets too hot, it disarms automatically.
 - **Always restores sleep** — on quit, crash, power loss, or if lidawake itself
   freezes while armed. The helper keeps its own watchdog: the app checks in every
   15 seconds, and if check-ins stop for 90 seconds the helper restores normal
   sleep on its own authority. That case matters most, because the thermal and
   battery guards run inside the app and a frozen app freezes them too.
+- **Warns you out loud on battery** — with battery use switched on, close the lid with
+  nothing plugged in, or pull the power with the lid shut, and it plays a sound. A muted
+  Mac stays silent, and a low volume is raised to 60% for that second and put back.
 - **Tells you what happened** — open the lid after five minutes or more and it reports
   how long the Mac stayed awake, whether it stayed cool, and what the battery did.
 - **Turns the screen off** when you close the lid.

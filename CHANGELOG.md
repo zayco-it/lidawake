@@ -3,10 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [1.5.0] — 2026-09-27
 
 - **lidawake now warns you, out loud, when your Mac is about to stay awake in a bag.** If you close the lid while lidawake is on and your Mac is on battery, it plays a sound — the first sound lidawake has ever made — and leaves a note in Notification Center saying so. The same happens if you unplug with the lid already shut, which is how a laptop comes off its dock and goes into a bag, and which used to get no warning at all. This only applies if you have turned on "Keep going on battery power"; otherwise unplugging turns lidawake off, as before.
-- **It stays quiet when a closed lid is plainly what you meant.** Plugged in, closing the lid is usually deliberate — an overnight download, a closed laptop driving a monitor — so nothing happens. Closing the lid on battery with an external display attached gets you the note without the sound. Unplugging with the lid already shut always sounds, even with a monitor still attached: from the Mac's side, pulling just the charger at a desk looks the same as pulling a dock on the way out, and a sound at your desk costs far less than a Mac left running in your bag.
+- **It stays quiet when a closed lid is plainly what you meant.** Plugged in, closing the lid is usually deliberate — an overnight download, a closed laptop driving a monitor — so nothing happens. Closing the lid on battery with an external display attached gets you the note without the sound. With battery use on, unplugging with the lid already shut always sounds, even with a monitor still attached: from the Mac's side, pulling just the charger at a desk looks the same as pulling a dock on the way out, and a sound at your desk costs far less than a Mac left running in your bag.
 - **It does not fight your volume.** Muted, or turned all the way down, it stays silent. If the volume is below 60%, it is raised to 60% for the second the sound plays and put straight back — unless you changed it yourself in the meantime, in which case yours stands, or switched to headphones, in which case they are left alone. If lidawake quits unexpectedly mid-sound, the volume is put back the next time it opens.
 - **The morning summary is still silent.** A Mac that has been awake all night still does not announce itself with a chime. The sound is only for the moment when you can still do something about it.
 

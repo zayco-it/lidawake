@@ -781,7 +781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let external = Displays.hasExternal()
         // The panel sleeping below does not silence this: the app plays the sound
         // itself rather than through the notification. See LidWarning.
-        if onBattery { lidWarning.warn(audible: !external) }
+        //
+        // Only if staying on is actually allowed. The lid is polled once a second
+        // but the power source arrives as an event, so a lid closed in the same
+        // second as an unplug can be seen first. With battery use off — or below
+        // the floor — disarmReason() already says we are about to turn off, and a
+        // "lidawake is still on" note would be false by the time anyone reads it.
+        if onBattery, PowerPolicy.disarmReason() == nil { lidWarning.warn(audible: !external) }
         // Clamshell: with an external monitor connected, closing the lid means the
         // user wants to keep using it — never sleep the external. Only sleep the
         // screen when the built-in panel is the only display (nothing to see behind
