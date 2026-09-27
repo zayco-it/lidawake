@@ -2,12 +2,15 @@ import Foundation
 import IOKit.pwr_mgt
 
 /// Holds IOKit power assertions while armed, and lets them be reconciled LIVE:
-///  - PreventUserIdleSystemSleep blocks *idle* system sleep with the lid OPEN
-///    (complementary to the helper's `pmset disablesleep`, which covers lid-close).
-///  - PreventUserIdleDisplaySleep optionally keeps the screen on while the lid is
-///    open (the "keep the screen on too" setting).
-/// `apply(systemAwake:screenOn:)` is idempotent, so the app can call it any time
-/// settings change — no disarm/re-arm needed.
+///  - PreventUserIdleSystemSleep, ALWAYS while armed: lidawake keeps the Mac awake
+///    with the lid open too, and that is not a setting. It overlaps rather than
+///    complements the helper's `pmset disablesleep` and the heartbeat's
+///    `.userInitiated` activity, which disables idle sleep as well — this is the
+///    one that is meant to, so the heartbeat can stop doing it without changing
+///    what the user gets.
+///  - PreventUserIdleDisplaySleep, only with "Keep the screen on".
+/// `apply(screenOn:)` is idempotent, so the app can call it any time settings
+/// change — no disarm/re-arm needed.
 final class WakeAssertionManager {
     private var systemID: IOPMAssertionID = 0
     private var displayID: IOPMAssertionID = 0
@@ -15,8 +18,8 @@ final class WakeAssertionManager {
     private var displayHeld = false
 
     /// Reconcile the held assertions to the desired state. Safe to call repeatedly.
-    func apply(systemAwake: Bool, screenOn: Bool) {
-        setSystem(systemAwake)
+    func apply(screenOn: Bool) {
+        setSystem(true)
         setDisplay(screenOn)
     }
 

@@ -10,22 +10,41 @@ enum Settings {
     enum Key {
         static let allowOnBattery      = "allowOnBattery"
         static let batteryFloorPercent = "batteryFloorPercent"
-        static let keepAwakeLidOpen    = "keepAwakeLidOpen"
         static let keepScreenOnLidOpen = "keepScreenOnLidOpen"
+        /// "Let lidawake manage the screen". Gone from the window; read once, by
+        /// the migration below, and never again.
+        static let legacyKeepAwakeLidOpen = "keepAwakeLidOpen"
     }
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             Key.allowOnBattery:      false,
             Key.batteryFloorPercent: 20,
-            Key.keepAwakeLidOpen:    true,
             Key.keepScreenOnLidOpen: false,
         ])
     }
 
+    /// One switch where there were two. "Let lidawake manage the screen" had no
+    /// effect of its own: lidawake keeps the Mac awake with the lid open whenever
+    /// it is armed, whatever that row said, so its only job was to unhide "Keep the
+    /// screen on" beneath it — and to force it off while hidden. The one switch
+    /// left takes the old parent AND the old child, so every user keeps exactly
+    /// the screen behaviour they had.
+    ///
+    /// Only runs if the old key was ever written. An absent key meant the old
+    /// default, true, and `true && child` is already the child's own value.
+    /// Idempotent: it removes the key it reads. Downgrade-safe: an older build
+    /// re-registers the parent's default of true, and `true && migrated` is still
+    /// the migrated value.
+    static func migrateLidOpenScreenSwitch(_ d: UserDefaults = .standard) {
+        guard let parent = d.object(forKey: Key.legacyKeepAwakeLidOpen) as? Bool else { return }
+        let child = d.object(forKey: Key.keepScreenOnLidOpen) as? Bool ?? false
+        d.set(parent && child, forKey: Key.keepScreenOnLidOpen)
+        d.removeObject(forKey: Key.legacyKeepAwakeLidOpen)
+    }
+
     static var allowOnBattery:      Bool { UserDefaults.standard.bool(forKey: Key.allowOnBattery) }
     static var batteryFloorPercent: Int  { UserDefaults.standard.integer(forKey: Key.batteryFloorPercent) }
-    static var keepAwakeLidOpen:    Bool { UserDefaults.standard.bool(forKey: Key.keepAwakeLidOpen) }
     static var keepScreenOnLidOpen: Bool { UserDefaults.standard.bool(forKey: Key.keepScreenOnLidOpen) }
 }
 
@@ -33,7 +52,6 @@ enum Settings {
 struct SettingsView: View {
     @AppStorage(Settings.Key.allowOnBattery)      private var allowOnBattery = false
     @AppStorage(Settings.Key.batteryFloorPercent) private var floor = 20
-    @AppStorage(Settings.Key.keepAwakeLidOpen)    private var keepOpen = true
     @AppStorage(Settings.Key.keepScreenOnLidOpen) private var screenOnOpen = false
 
     var body: some View {
@@ -52,10 +70,7 @@ struct SettingsView: View {
                 }
             }
             Section("When the lid is open") {
-                Toggle("Let lidawake manage the screen", isOn: $keepOpen)
-                if keepOpen {
-                    Toggle("Keep the screen on", isOn: $screenOnOpen)
-                }
+                Toggle("Keep the screen on", isOn: $screenOnOpen)
                 Text("Your Mac stays awake either way \u{2014} this is only about the screen.")
                     .font(.footnote).foregroundStyle(.secondary)
             }

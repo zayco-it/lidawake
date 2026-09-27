@@ -96,6 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var approveItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything reads a setting. See migrateLidOpenScreenSwitch.
+        Settings.migrateLidOpenScreenSwitch()
         Settings.registerDefaults()
         installEditMenu()
 
@@ -606,8 +608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helperApprovedOnce = true    // the helper answered → it's genuinely set up on this Mac
         if LoginItem.registerOnce() { announceLoginItem() }   // once only; see WakeNotice
         preparingWindow.close()      // no-op if it wasn't showing
-        wake.apply(systemAwake: Settings.keepAwakeLidOpen,
-                   screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
+        wake.apply(screenOn: Settings.keepScreenOnLidOpen)
         power.startMonitoring()
         lid.start()
         armed = true
@@ -762,8 +763,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // longer allowed) — cut out cleanly if so.
         let (ok, _) = PowerPolicy.armingAllowed()
         guard ok else { autoDisarm("battery use isn\u{2019}t allowed with the new settings"); return }
-        wake.apply(systemAwake: Settings.keepAwakeLidOpen,
-                   screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
+        wake.apply(screenOn: Settings.keepScreenOnLidOpen)
     }
 
     /// Lid just closed while armed — warn if that was on battery, and sleep the

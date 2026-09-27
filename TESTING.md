@@ -292,40 +292,46 @@ On **AC power**, no external display:
 
 ## 5. Lid-open options
 
-> **Lid-open wakefulness is not optional, and nothing in this section changes
-> it.** `Heartbeat.start()` calls `beginActivity(options: .userInitiated)`, and
-> `NSActivityUserInitiated` includes `NSActivityIdleSystemSleepDisabled` — so
-> lidawake holds a `PreventUserIdleSystemSleep` assertion, named "lidawake is
-> keeping this Mac awake", for exactly as long as it is armed, independent of
-> every setting. Established 2026-09-06; see **E0k** in zayco-site's decision log.
-> The two switches below control the **screen**, and nothing else.
+> **Lid-open wakefulness is not optional, by design.** While armed,
+> `WakeAssertionManager` always holds `PreventUserIdleSystemSleep` ("keep awake
+> while armed"); the heartbeat's `.userInitiated` activity holds one too (see
+> **E0k** in zayco-site's decision log). The "Let lidawake manage the screen" row
+> that looked like a choice here was removed: it had no effect of its own, and only
+> unhid the switch below. What is left controls the **screen**, and nothing else.
 
-- [ ] **Let lidawake manage the screen** ON (default): arm, leave the lid open and
-      idle past the Energy-Saver sleep time → it does **not** idle-sleep. True,
-      but the heartbeat's assertion is what does it — not this switch.
-- [ ] **Keep the screen on** ON: while armed and idle, the **display** also stays
-      on (doesn't dim/sleep). This is the one real lid-open behaviour these two
-      switches control.
-- [ ] **Let lidawake manage the screen** OFF → the **Keep the screen on** row
-      hides and the screen dims normally. Note the screen also dims with the
-      parent ON and the child OFF: the parent only decides whether the choice is
-      offered.
-- [ ] Both OFF: arming still keeps lid-**closed** awake.
+- [ ] Arm, leave the lid open and idle past the Energy-Saver sleep time → it does
+      **not** idle-sleep; `pmset -g assertions` shows "keep awake while armed",
+      whatever the switch says.
+- [ ] **Keep the screen on** ON: while armed and idle, the **display** also stays on
+      (doesn't dim/sleep).
+- [ ] **Keep the screen on** OFF (default): the screen dims and sleeps as usual; the
+      Mac stays awake.
+- [ ] Either way, arming still keeps lid-**closed** awake.
+- [ ] **An update keeps everyone's screen behaviour.** The migration is covered for
+      every stored state by the selftest:
 
-### Does `disablesleep` block idle sleep? — NOT ANSWERABLE FROM THIS BUILD
+      ```sh
+      swiftc -O -parse-as-library tools/settings-selftest.swift Sources/App/Settings.swift \
+          -framework AppKit -framework SwiftUI \
+          -o /tmp/lidawake-settings-selftest && /tmp/lidawake-settings-selftest
+      ```
 
-This section used to carry a fourth case claiming that arming with the lid-open
-toggle off left `pmset disablesleep 1` as the only thing holding the Mac, and so
-isolated it. It does not, and the case could never fail — one of its own
-preconditions, "`pmset -g assertions` must show no lidawake assertion", cannot be
-satisfied while armed, because the heartbeat creates one. It was run that way on
-2026-09-06, reported "stays awake", and the conclusion drawn from it was wrong.
+      One spot check on hardware, the case that changes a stored value: with the
+      app quit, `defaults write it.zayco.lidawake keepAwakeLidOpen -bool false` and
+      `defaults write it.zayco.lidawake keepScreenOnLidOpen -bool true` (the old
+      window showed the screen switch hidden, so the screen was NOT kept on) →
+      launch this build → **Keep the screen on** reads OFF, and
+      `defaults read it.zayco.lidawake keepAwakeLidOpen` says the key does not exist.
 
-Answering the question needs a build with `Sources/App/Heartbeat.swift` changed
-from `.userInitiated` to `.userInitiatedAllowingIdleSystemSleep`. That is **E0k**,
-deferred out of 1.4.9 on purpose: it shares a code path with the watchdog-disarm
-change shipped here, and running both in one release would make a regression
-impossible to attribute. Do not re-add a case here until that build exists.
+### `disablesleep` vs idle sleep — no longer a product question
+
+E0k asked whether the lid-open row could become a real control of lid-open idle
+sleep: fix the heartbeat (`.userInitiated` → `.userInitiatedAllowingIdleSystemSleep`),
+then find out whether `pmset disablesleep 1` still blocks idle sleep on its own.
+With the row gone, lid-open wakefulness is a promise rather than a setting, and
+`WakeAssertionManager` holds its assertion unconditionally — so the heartbeat change
+is now a cleanup with no user-visible effect, and the `disablesleep` answer decides
+nothing. Still unmeasured; not needed.
 
 ## 6. Battery policy
 
@@ -415,8 +421,8 @@ Then, in that state:
 - [ ] Opens from menu **Settings…** and with **⌘,** while the window is focused.
 - [ ] **Keep going on battery power** ON → a floor stepper and the heat warning
       appear; OFF → they hide.
-- [ ] **Let lidawake manage the screen** ON → **Keep the screen on** appears;
-      OFF → it hides.
+- [ ] **When the lid is open** holds one switch, **Keep the screen on**, always
+      visible.
 - [ ] Toggling any switch persists (re-open the window, or relaunch, to confirm).
 
 ---
@@ -424,9 +430,9 @@ Then, in that state:
 ## 10. Version, About & auto-update (added 1.0.1 / 1.0.2)
 
 - [ ] Menu → **About lidawake** shows the icon + correct **Version x.y.z (build)** + copyright.
-- [ ] **Live settings** (needs a *signed* build so it can arm): while armed, toggling "Keep the screen on
-      too" off/on adds/removes the display lock **immediately** (no disarm/re-arm); toggling "Also keep my Mac
-      awake" off drops both lid-open locks while `SleepDisabled` stays 1; no spurious disarm across toggles.
+- [ ] **Live settings** (needs a *signed* build so it can arm): while armed, toggling "Keep the screen on"
+      off/on adds/removes the display lock **immediately** (no disarm/re-arm); the system lock stays held
+      throughout and `SleepDisabled` stays 1; no spurious disarm across toggles.
       Verify via `pmset -g assertions | grep it.zayco.lidawake`.
 - [ ] **First-run "I've turned it on"**: if the helper still isn't enabled, it shows a feedback line (not a
       silent no-op).
@@ -514,6 +520,7 @@ open it again within the 30 s.
 
 - [ ] `SIGN=1 ./build.sh` is clean and verifies.
 - [ ] `tools/lidwarning-selftest.swift` → ALL PASS (command in §11).
+- [ ] `tools/settings-selftest.swift` → ALL PASS (command in §5).
 - [ ] Arm on AC → `SleepDisabled 1`; disarm → `0`.
 - [ ] Glyph goes blue/mono with state; menu checkmark tracks state.
 - [ ] Quit while armed → `SleepDisabled 0`.

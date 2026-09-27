@@ -3,6 +3,10 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+- **One switch where there were two.** In Settings, "Let lidawake manage the screen" is gone and "Keep the screen on" stays, always visible. The removed row never changed anything by itself — while lidawake is on, it keeps your Mac awake with the lid open too, whatever that row said — it only showed or hid the switch beneath it. Your setting carries over exactly: if your screen was being kept on, it still is, and if it wasn't, it still isn't.
+
 ## [1.5.0] — 2026-09-27
 
 - **lidawake now warns you, out loud, when your Mac is about to stay awake in a bag.** If you close the lid while lidawake is on and your Mac is on battery, it plays a sound — the first sound lidawake has ever made — and leaves a note in Notification Center saying so. The same happens if you unplug with the lid already shut, which is how a laptop comes off its dock and goes into a bag, and which used to get no warning at all. This only applies if you have turned on "Keep going on battery power"; otherwise unplugging turns lidawake off, as before.
