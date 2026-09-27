@@ -302,8 +302,19 @@ On **AC power**, no external display:
 - [ ] Arm, leave the lid open and idle past the Energy-Saver sleep time → it does
       **not** idle-sleep; `pmset -g assertions` shows "keep awake while armed",
       whatever the switch says.
-- [ ] **Keep the screen on** ON: while armed and idle, the **display** also stays on
-      (doesn't dim/sleep).
+- [ ] **Keep the screen on** ON: while armed and idle **with the lid open**, the
+      **display** also stays on (doesn't dim/sleep).
+- [ ] **Keep the screen on** ON, **lid shut in clamshell** on an external monitor,
+      on power: the external **sleeps on its normal timer** — `pmset -g assertions`
+      shows no "keep the screen on while armed" while the lid is shut, and "keep
+      awake while armed" throughout. Open the lid → the screen lock is back. (Before this, the lock was held lid open or shut, and a
+      monitor in clamshell never slept.) The logic is covered by the selftest:
+
+      ```sh
+      swiftc -O -parse-as-library tools/wakeassertion-selftest.swift \
+          Sources/App/WakeAssertionManager.swift Sources/Shared/HelperProtocol.swift \
+          -o /tmp/lidawake-wakeassertion-selftest && /tmp/lidawake-wakeassertion-selftest
+      ```
 - [ ] **Keep the screen on** OFF (default): the screen dims and sleeps as usual; the
       Mac stays awake.
 - [ ] Either way, arming still keeps lid-**closed** awake.
@@ -521,6 +532,7 @@ open it again within the 30 s.
 - [ ] `SIGN=1 ./build.sh` is clean and verifies.
 - [ ] `tools/lidwarning-selftest.swift` → ALL PASS (command in §11).
 - [ ] `tools/settings-selftest.swift` → ALL PASS (command in §5).
+- [ ] `tools/wakeassertion-selftest.swift` → ALL PASS (command in §5).
 - [ ] Arm on AC → `SleepDisabled 1`; disarm → `0`.
 - [ ] Glyph goes blue/mono with state; menu checkmark tracks state.
 - [ ] Quit while armed → `SleepDisabled 0`.

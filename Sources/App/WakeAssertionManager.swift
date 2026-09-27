@@ -8,24 +8,47 @@ import IOKit.pwr_mgt
 ///    `.userInitiated` activity, which disables idle sleep as well — this is the
 ///    one that is meant to, so the heartbeat can stop doing it without changing
 ///    what the user gets.
-///  - PreventUserIdleDisplaySleep, only with "Keep the screen on".
-/// `apply(screenOn:)` is idempotent, so the app can call it any time settings
-/// change — no disarm/re-arm needed.
+///  - PreventUserIdleDisplaySleep, only with "Keep the screen on" AND the lid
+///    open — the switch sits under "When the lid is open" and means only that.
+///    Held with the lid shut it kept an external monitor lit all night in
+///    clamshell: nobody reading that heading expects it.
+/// Both inputs are remembered, so the switch and the lid can each change on their
+/// own and every call reconciles to "switch on and lid open". Idempotent — the app
+/// calls it on any settings change, no disarm/re-arm needed.
 final class WakeAssertionManager {
     private var systemID: IOPMAssertionID = 0
     private var displayID: IOPMAssertionID = 0
     private var systemHeld = false
     private var displayHeld = false
 
-    /// Reconcile the held assertions to the desired state. Safe to call repeatedly.
-    func apply(screenOn: Bool) {
-        setSystem(true)
-        setDisplay(screenOn)
+    private var keepScreenOn = false
+    private var lidClosed = false
+    /// Between apply() and release() — armed. A lid change outside it is only
+    /// recorded: acting on it would take back assertions release() just dropped.
+    private var active = false
+
+    /// Armed, or "Keep the screen on" changed. Safe to call repeatedly.
+    func apply(keepScreenOn: Bool) {
+        self.keepScreenOn = keepScreenOn
+        active = true
+        reconcile()
+    }
+
+    /// The lid moved. Call before apply() at arming, with the lid as it is now.
+    func setLidClosed(_ closed: Bool) {
+        lidClosed = closed
+        if active { reconcile() }
     }
 
     func release() {
+        active = false
         setSystem(false)
         setDisplay(false)
+    }
+
+    private func reconcile() {
+        setSystem(true)
+        setDisplay(keepScreenOn && !lidClosed)
     }
 
     private func setSystem(_ on: Bool) {

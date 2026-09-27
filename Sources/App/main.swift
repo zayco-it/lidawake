@@ -154,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.handleLidClosed(onBattery: !power.isOnAC)
         }
         lid.onLidOpened    = { [weak self] in
+            self?.wake.setLidClosed(false)   // "Keep the screen on" applies again
             self?.idleWatcher.stop()
             self?.postWakeSummary()
         }
@@ -608,7 +609,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         helperApprovedOnce = true    // the helper answered → it's genuinely set up on this Mac
         if LoginItem.registerOnce() { announceLoginItem() }   // once only; see WakeNotice
         preparingWindow.close()      // no-op if it wasn't showing
-        wake.apply(screenOn: Settings.keepScreenOnLidOpen)
+        wake.setLidClosed(LidMonitor.isLidClosed())   // armed with the lid shut: no screen lock
+        wake.apply(keepScreenOn: Settings.keepScreenOnLidOpen)
         power.startMonitoring()
         lid.start()
         armed = true
@@ -763,7 +765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // longer allowed) — cut out cleanly if so.
         let (ok, _) = PowerPolicy.armingAllowed()
         guard ok else { autoDisarm("battery use isn\u{2019}t allowed with the new settings"); return }
-        wake.apply(screenOn: Settings.keepScreenOnLidOpen)
+        wake.apply(keepScreenOn: Settings.keepScreenOnLidOpen)
     }
 
     /// Lid just closed while armed — warn if that was on battery, and sleep the
@@ -776,6 +778,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// a shut lid, which is the very thing the battery warning in Settings argues against.
     private func handleLidClosed(onBattery: Bool) {
         guard armed else { return }
+        // "Keep the screen on" is a lid-open setting: let go of the screen, so an
+        // external monitor in clamshell sleeps on its own timer instead of staying
+        // lit all night. Taken back in onLidOpened.
+        wake.setLidClosed(true)
         // Trustworthy HERE, at the closing edge: the list was live a moment ago with
         // the lid open. Not later — see handleUnplugged for how it freezes.
         let external = Displays.hasExternal()

@@ -6,6 +6,7 @@ This project follows [Semantic Versioning](https://semver.org).
 ## [Unreleased]
 
 - **One switch where there were two.** In Settings, "Let lidawake manage the screen" is gone and "Keep the screen on" stays, always visible. The removed row never changed anything by itself — while lidawake is on, it keeps your Mac awake with the lid open too, whatever that row said — it only showed or hid the switch beneath it. Your setting carries over exactly: if your screen was being kept on, it still is, and if it wasn't, it still isn't.
+- **"Keep the screen on" now means what its heading says: only while the lid is open.** Until now it held the screen awake whenever lidawake was on, lid open or shut — so with the lid closed on an external monitor, that monitor never went to sleep, and could stay lit all night after you left your desk. Now, when you close the lid, the monitor sleeps on its normal timer, and when you open the lid again the setting applies as before. Your Mac itself stays awake either way.
 
 ## [1.5.0] — 2026-09-27
 
