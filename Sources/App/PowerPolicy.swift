@@ -63,7 +63,11 @@ func readPowerState() -> PowerState {
 /// `onViolation` on a policy violation (e.g. unplugged when battery isn't allowed).
 final class PowerPolicy {
     var onViolation: ((String) -> Void)?   // invoked on the main thread; carries the turn-off reason
+    /// AC → battery while monitoring, and only when that did not trip
+    /// `onViolation`. Invoked on the main thread.
+    var onUnplugged: (() -> Void)?
     private var runLoopSource: CFRunLoopSource?
+    private var wasOnAC = true
 
     /// True if it's currently safe to be armed; `reason` explains any refusal.
     static func armingAllowed() -> (ok: Bool, reason: String?) {
@@ -119,15 +123,31 @@ final class PowerPolicy {
     /// Begin watching live AC/battery changes; fire `onViolation` on a trip.
     func startMonitoring() {
         guard runLoopSource == nil else { return }
+        wasOnAC = readPowerState().isOnAC
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         // The callback must be a capture-less C function; context carries `self`.
         guard let src = IOPSNotificationCreateRunLoopSource({ raw in
             guard let raw else { return }
-            let me = Unmanaged<PowerPolicy>.fromOpaque(raw).takeUnretainedValue()
-            if let reason = PowerPolicy.disarmReason() { me.onViolation?(reason) }
+            Unmanaged<PowerPolicy>.fromOpaque(raw).takeUnretainedValue().powerSourceChanged()
         }, ctx)?.takeRetainedValue() else { return }
         runLoopSource = src
         CFRunLoopAddSource(CFRunLoopGetMain(), src, .defaultMode)
+    }
+
+    /// This fires on every power-source change — each percent of charge too — so
+    /// the unplug is taken as an EDGE, not a state; as a state it would fire the
+    /// lid warning once a percent all night. A trip takes precedence: with battery
+    /// use off, unplugging turns lidawake off, and there is nothing left to warn
+    /// about.
+    private func powerSourceChanged() {
+        let onAC = readPowerState().isOnAC
+        let unplugged = wasOnAC && !onAC
+        wasOnAC = onAC
+        if let reason = PowerPolicy.disarmReason() {
+            onViolation?(reason)
+            return
+        }
+        if unplugged { onUnplugged?() }
     }
 
     func stopMonitoring() {

@@ -103,6 +103,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func present(title: String, body: String,
                  stillWanted: @escaping () -> Bool = { true },
                  completion: ((Outcome) -> Void)? = nil) {
+        // KNOWN BLIND SPOT, left on purpose. Measured 2026-09-27: with the lid shut
+        // and the last external display unplugged, the CG display list freezes until
+        // the lid opens, still listing the gone display as active and awake. A
+        // message posted in that window is sent at once instead of held, and lands
+        // in Notification Center unseen. The menu carrier still has it — which is
+        // exactly what the carrier is for — and the only realistic message there is
+        // the watchdog's "turned itself off".
         if CGDisplayIsAsleep(CGMainDisplayID()) == 0 {
             post(title: title, body: body, completion: completion)
             return
@@ -112,6 +119,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         held = Held(title: title, body: body, stillWanted: stillWanted, completion: completion)
         armWakeObserver()
         NSLog("[lidawake] display asleep — holding notification until the screens wake")
+    }
+
+    /// Post now, even with the display asleep — for a message whose whole value
+    /// is its timing (LidWarning). Held until the screens wake, "the lid just
+    /// closed on battery" would arrive the next morning beside the summary of the
+    /// night it was meant to prevent. Posted to a sleeping display it is not
+    /// shown as a banner, but it does land in Notification Center, which is where
+    /// it is wanted. A fixed `identifier` replaces an earlier copy instead of
+    /// stacking another.
+    func postNow(title: String, body: String, identifier: String) {
+        post(title: title, body: body, identifier: identifier)
     }
 
     /// Both wake signals, because the two cases this has to cover are different.
@@ -168,7 +186,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// minutes away or never. Callers must not treat "no callback yet" as
     /// success — see WakeNotice for how a notice stays visible in the menu until
     /// the user has demonstrably seen it.
-    private func post(title: String, body: String, completion: ((Outcome) -> Void)? = nil) {
+    private func post(title: String, body: String, identifier: String = UUID().uuidString,
+                      completion: ((Outcome) -> Void)? = nil) {
         let done: (Outcome) -> Void = { o in
             DispatchQueue.main.async {
                 NSLog("[lidawake] notification \(title.prefix(40)) -> \(o)")
@@ -180,13 +199,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             guard let self else { return }
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
-                self.deliver(title: title, body: body, done: done)
+                self.deliver(title: title, body: body, identifier: identifier, done: done)
             case .denied:
                 done(.denied)
             case .notDetermined:
                 self.center.requestAuthorization(options: [.alert]) { granted, err in
                     if let err { done(.failed(err.localizedDescription)); return }
-                    granted ? self.deliver(title: title, body: body, done: done) : done(.denied)
+                    granted ? self.deliver(title: title, body: body, identifier: identifier, done: done)
+                            : done(.denied)
                 }
             @unknown default:
                 done(.denied)
@@ -194,13 +214,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func deliver(title: String, body: String, done: @escaping (Outcome) -> Void) {
+    private func deliver(title: String, body: String, identifier: String,
+                         done: @escaping (Outcome) -> Void) {
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = body
         // No sound: this is information, not an alarm. A Mac that has been quietly
-        // awake all night should not announce itself with a chime.
-        let req = UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil)
+        // awake all night should not announce itself with a chime. That includes
+        // the lid warning's notification — its sound is played by LidWarning
+        // itself, the one sound in the app, and this stays silent.
+        let req = UNNotificationRequest(identifier: identifier, content: c, trigger: nil)
         center.add(req) { err in
             if let err { done(.failed(err.localizedDescription)) } else { done(.accepted) }
         }
@@ -208,11 +231,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     // Show the banner even if lidawake is frontmost. Default macOS behaviour is to
     // suppress it, which would silently drop the message in exactly the case where
-    // the user is looking at the screen.
+    // the user is looking at the screen. `.list` keeps it in Notification Center
+    // afterwards too, as it would be had lidawake not been frontmost — the lid
+    // warning relies on being there when the user comes back.
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler handler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        handler([.banner])
+        handler([.banner, .list])
     }
 
     // The user clicked it. This is the one moment we know a message reached a

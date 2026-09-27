@@ -441,9 +441,79 @@ Then, in that state:
 > did and why** (core unchanged), in the results log. Risk-based and documented, never silent. Compiling is not
 > testing. See the `never-ship-untested` rule.
 
+## 11. Lid warning — the one sound lidawake makes
+
+> Fires when the lid closes while armed **on battery** — with an external display
+> attached that is a silent notification only — or when power goes to battery with
+> the lid **already shut** (off the dock, into a bag), which **always** sounds, whatever
+> is attached. On AC, nothing. The sound is **Hero**,
+> played by the app itself, at **60% or louder**: a lower volume is raised to 60% for
+> the sound and put back after. The notification is always silent. Only reachable with
+> **Keep going on battery power** ON — with it off, going to battery disarms instead.
+>
+> The volume rules are covered headlessly first — run this before anything below:
+>
+> ```sh
+> swiftc -O -parse-as-library Sources/App/WarningVolume.swift \
+>     tools/lidwarning-selftest.swift -o /tmp/lidawake-lidwarning-selftest \
+>     && /tmp/lidawake-lidwarning-selftest
+> ```
+
+Setup: the signed build in `/Applications`, **Keep going on battery power** ON, armed
+in the account you are sitting at (audio from a fast-user-switched background session
+is not known to reach the speakers). The helper is shared with the other account —
+disarm when done. Read and set the level with `osascript -e 'get volume settings'` /
+`osascript -e 'set volume output volume 10'`.
+
+- [ ] **Battery, no display, volume 31%** (an ordinary setting), a TV or music on in
+      the room → close the lid → the sound is **audible through the closed lid without
+      listening for it**. Open it → "lidawake is still on" is in Notification Center,
+      and the volume reads **31** again. (The measurement that set 60%: at 31%
+      unraised, with a TV on, it was heard only by someone waiting for it.)
+- [ ] **Muted** → no sound; notification present; still muted, level unchanged.
+- [ ] **Volume 0, not muted** → no sound; still 0.
+- [ ] **Volume 75%** → sound at 75%; level untouched.
+- [ ] **Battery, external display** → no sound; banner on the external; entry in
+      Notification Center.
+- [ ] **AC, no display** → no sound, no notification; the panel still sleeps (§4).
+- [ ] **Lid bounce** — close, open, close inside a second → one sound, not two;
+      volume back at its level afterwards.
+- [ ] **Dock unplug — the bag case.** Clamshell on a dock (or a monitor) that carries
+      power AND the display, armed, on AC → pull the cable → **the sound at once**. It
+      must not depend on the display leaving: with the lid shut and no display left,
+      the CG display list freezes until the lid opens (measured 2026-09-27 — a pulled
+      Thunderbolt monitor stayed listed as awake for 20–35 s), which is why the first
+      version, which asked it, stayed silent here.
+- [ ] **Charger only** — clamshell, display on its own cable → pull just the charger
+      → **the sound** too. Accepted cost of the above: nothing reliable can tell this
+      apart from the bag case with the lid shut.
+- [ ] **Unplug with the lid open** → nothing.
+- [ ] **Known gap, check it stays a gap:** on battery, lid shut on a monitor that does
+      not charge → unplug the monitor → nothing (no power change; frozen display list).
+      Not covered on purpose — the registry reading that sees it also drops when the
+      monitor is switched off or changes input (measured 2026-09-27).
+
+The next four need the raise to last long enough to act inside it. Quit lidawake, then
+run it from a terminal with the test hook — its `[lidawake]` log lines print there:
+
+```sh
+LIDAWAKE_WARNING_HOLD_SECONDS=30 /Applications/lidawake.app/Contents/MacOS/lidawake
+```
+
+Each starts the same way: volume 10%, on battery, armed, close the lid (sound plays),
+open it again within the 30 s.
+
+- [ ] **Crash** → `pkill -9 -x lidawake` → the level stays at **60** → relaunch → back
+      to **10**, and the log says `a lid warning was cut off last run — volume: restored`.
+- [ ] **You change it** → set 70% yourself → after the 30 s it is still **70**.
+- [ ] **Device switch** → plug in headphones (or pick another output) → after the
+      30 s the **speakers** are back at 10 and the headphones' level is untouched.
+- [ ] **Quit** → menu → Quit → back at **10** at once.
+
 ## Quick regression pass (after any code change)
 
 - [ ] `SIGN=1 ./build.sh` is clean and verifies.
+- [ ] `tools/lidwarning-selftest.swift` → ALL PASS (command in §11).
 - [ ] Arm on AC → `SleepDisabled 1`; disarm → `0`.
 - [ ] Glyph goes blue/mono with state; menu checkmark tracks state.
 - [ ] Quit while armed → `SleepDisabled 0`.

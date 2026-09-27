@@ -31,6 +31,8 @@ APP_SRCS="Sources/App/main.swift \
           Sources/App/InstallLocation.swift \
           Sources/App/LoginItem.swift \
           Sources/App/Notifier.swift \
+          Sources/App/LidWarning.swift \
+          Sources/App/WarningVolume.swift \
           Sources/App/WakeNotice.swift \
           Sources/App/WakeSummary.swift \
           Sources/App/Settings.swift \
@@ -55,6 +57,7 @@ swiftc -O -target arm64-apple-macos13 -o "$BUNDLE/Contents/MacOS/$APP" \
     $SHARED $APP_SRCS \
     -F vendor/Sparkle -framework Sparkle \
     -framework AppKit -framework ServiceManagement -framework IOKit -framework SwiftUI \
+    -framework CoreAudio -framework AudioToolbox \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks
 cp Resources/Info.plist "$BUNDLE/Contents/Info.plist"
 cp Resources/lidawake.icns "$BUNDLE/Contents/Resources/lidawake.icns"

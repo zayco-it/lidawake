@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let lid            = LidMonitor()
     private let heartbeat      = Heartbeat()
     private let notifier       = Notifier()
+    private lazy var lidWarning = LidWarning(notifier: notifier)
     private var wakeSummary    = WakeSummary()
     private let idleWatcher    = IdleWatcher()
     private let settingsWindow = SettingsWindowController()
@@ -122,16 +123,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
+        // A lid warning cut off by a crash left the volume raised. Put it back
+        // before anything can start another — and only here, past the two guards
+        // above: a copy that is about to quit has no business touching audio.
+        LidWarning.repairAfterCrash()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         thermal.onOverheat = { [weak self] in self?.autoDisarm("your Mac was getting too warm") }
         power.onViolation  = { [weak self] reason in self?.autoDisarm(reason) }
+        power.onUnplugged  = { [weak self] in self?.handleUnplugged() }
         lid.onLidClosed    = { [weak self] in
             guard let self else { return }
+            let power = readPowerState()
             // Start the session regardless of the screen-off setting —
             // handleLidClosed() returns early when it is off, and the summary is
             // about staying awake, not about the screen.
-            self.wakeSummary.begin(battery: readPowerState().percent)
+            self.wakeSummary.begin(battery: power.percent)
             self.thermal.resetPeak()
             // IdleWatcher is NOT started. Measured 2026-09-06 in the target
             // configuration — lid shut, external display, on AC, unattended, with
@@ -141,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // that it did. The detector stays in the tree for a rebuild on signals
             // that were measured to work (presence, playback, GPU, network); until
             // then it does not run and nothing promises it.
-            self.handleLidClosed()
+            self.handleLidClosed(onBattery: !power.isOnAC)
         }
         lid.onLidOpened    = { [weak self] in
             self?.idleWatcher.stop()
@@ -322,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if armed { helperClient.setDisableSleepSync(false) }
         stopArmedWatchers()
         thermal.stop()
+        lidWarning.finish()   // nor a volume raised for a warning
     }
 
     // MARK: - Menu
@@ -757,27 +766,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                    screenOn: Settings.keepAwakeLidOpen && Settings.keepScreenOnLidOpen)
     }
 
-    /// Lid just closed while armed — sleep the built-in panel so a closed lid isn't
-    /// left backlit. The system stays awake.
+    /// Lid just closed while armed — warn if that was on battery, and sleep the
+    /// built-in panel so a closed lid isn't left backlit. The system stays awake.
     ///
     /// Unconditional since the "Turn the screen off" setting was removed: there was no
     /// configuration in which switching it off helped anyone. With an external display
     /// this returns below without touching anything, so the toggle was inert in
     /// clamshell; without one it only chose whether to burn power and make heat behind
-    /// a shut lid, which is the very thing the battery warning argues against.
-    private func handleLidClosed() {
+    /// a shut lid, which is the very thing the battery warning in Settings argues against.
+    private func handleLidClosed(onBattery: Bool) {
         guard armed else { return }
+        // Trustworthy HERE, at the closing edge: the list was live a moment ago with
+        // the lid open. Not later — see handleUnplugged for how it freezes.
+        let external = Displays.hasExternal()
+        // The panel sleeping below does not silence this: the app plays the sound
+        // itself rather than through the notification. See LidWarning.
+        if onBattery { lidWarning.warn(audible: !external) }
         // Clamshell: with an external monitor connected, closing the lid means the
         // user wants to keep using it — never sleep the external. Only sleep the
         // screen when the built-in panel is the only display (nothing to see behind
         // a closed lid). Fixes "external monitor goes dark on lid close".
-        if Displays.hasExternal() {
+        if external {
             NSLog("[lidawake] lid closed with an external display — leaving screens on (clamshell)")
             return
         }
         helperClient.sleepDisplayNow { err in
             if let err { NSLog("[lidawake] sleepDisplayNow error: \(err)") }
         }
+    }
+
+    /// Power went to battery while armed. With the lid open that is nothing to warn
+    /// about — the user is right there. With it shut, it is a laptop pulled off its
+    /// dock and put in a bag: the most dangerous way into this state. Always with
+    /// the sound, whatever is attached.
+    ///
+    /// No display check, deliberately. Measured 2026-09-27: with the lid shut and
+    /// the last external display gone, the CG display list FREEZES until the lid
+    /// opens — a pulled Thunderbolt monitor stayed listed as active and awake for
+    /// 20–35 s, every time, so `Displays.hasExternal()` said "attached" and the
+    /// warning went silent in exactly the bag case. No settle delay fixes a list
+    /// that does not update. What not asking costs: pulling only the charger at a
+    /// desk, lid shut on a separate monitor, sounds too — cheap next to a missed bag.
+    private func handleUnplugged() {
+        guard armed, LidMonitor.isLidClosed() else { return }
+        lidWarning.warn(audible: true)
     }
 
     /// Cleanly remove the privileged helper (a privileged-helper app must offer
