@@ -15,7 +15,7 @@ for a security problem — mail first and give me a chance to ship a fix.
 Useful things to include:
 
 - lidawake version (menu ▸ About, or `CFBundleShortVersionString`), and the
-  helper version if you have it (`helperVersion` over XPC — currently 2.2.0)
+  helper version if you have it (`helperVersion` over XPC)
 - macOS version and hardware
 - what you did, what happened, what you expected
 - a proof of concept if you have one, even a rough one
@@ -40,13 +40,15 @@ details and we'll sort something out.
 
 ## Supported versions
 
-Only the **latest release** gets security fixes. Current: **1.4.9**. There are no
-backports; a fix ships as a new version and reaches users through Sparkle.
+Only the **latest release** gets security fixes — whatever
+[the releases page](https://github.com/zayco-it/lidawake/releases) lists first. There
+are no backports; a fix ships as a new version and reaches users through Sparkle.
 
 Worth knowing when you verify a fix: the helper is versioned separately
-(currently **2.2.0**), and replacing the app bundle does **not** restart an
-already-running LaunchDaemon. Until the app re-registers it or the Mac reboots,
-the previous helper binary is still the one answering XPC.
+(`LidAwakeIDs.helperVersion` in `Sources/Shared/HelperProtocol.swift`), and
+replacing the app bundle does **not** restart an already-running LaunchDaemon.
+Until the app re-registers it or the Mac reboots, the previous helper binary is
+still the one answering XPC.
 
 ## In scope
 
