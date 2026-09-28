@@ -1,8 +1,9 @@
 // lidawake — Milestone 3 (UI).
 // Menu-bar app that keeps the Mac awake with the lid closed via a root
 // SMAppService helper (pmset disablesleep) reached over XPC. The daily control is
-// one menu toggle ("Keep my Mac awake"); behaviour is tuned in a small SwiftUI
-// Settings window. Safety guards (thermal / battery / dead-man's switch) stay on.
+// two menu items — "Keep awake until I turn it off" and "Keep awake until it goes
+// quiet" (see ArmMode.swift); behaviour is tuned in a small SwiftUI Settings
+// window. Safety guards (thermal / battery / dead-man's switch) stay on.
 //
 // Build: ./build.sh   Sign+build: SIGN=1 ./build.sh   Run: open build/lidawake.app
 
@@ -11,7 +12,13 @@ import Sparkle
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
-    private var armed = false
+    /// Off, or on in one of two ways. Both ways are the same arming for the
+    /// helper; only `.untilQuiet` runs the detector. See ArmMode.swift.
+    private var mode: ArmMode = .off
+    private var armed: Bool { mode.isOn }
+    /// The mode a click asked for, carried across the asynchronous arm — the
+    /// helper's reply, or the recovery flow's — to `finishArming()`.
+    private var pendingMode: ArmMode = .untilOff
     private var isRecovering = false   // guards the auto-repair of a stale post-update helper
 
     /// Set by the single-instance guard at the foot of this file: a DIFFERENT copy
@@ -89,7 +96,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     // Dynamic menu items, refreshed on every open.
-    private var toggleItem: NSMenuItem!
+    private var untilOffItem: NSMenuItem!
+    private var untilQuietItem: NSMenuItem!
     private var statusLineItem: NSMenuItem!
     private var noticeItem: NSMenuItem!
     private var licenseItem: NSMenuItem!
@@ -143,22 +151,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // about staying awake, not about the screen.
             self.wakeSummary.begin(battery: power.percent)
             self.thermal.resetPeak()
-            // IdleWatcher is NOT started. Measured 2026-09-06 in the target
-            // configuration — lid shut, external display, on AC, unattended, with
-            // ordinary apps open — the window averaged 1.56 core-equivalents
-            // against its own 1.0 limit, 54 of 60 samples over. It reads BUSY
-            // permanently, so the auto-off never fires, and the app was claiming
-            // that it did. The detector stays in the tree for a rebuild on signals
-            // that were measured to work (presence, playback, GPU, network); until
-            // then it does not run and nothing promises it.
+            // The quiet detector is NOT lid-gated any more: it runs whenever
+            // "until it goes quiet" is on, lid open or shut (spec §11.2). The lid
+            // only starts and ends the session the summary reports.
             self.handleLidClosed(onBattery: !power.isOnAC)
         }
         lid.onLidOpened    = { [weak self] in
             self?.wake.setLidClosed(false)   // "Keep the screen on" applies again
-            self?.idleWatcher.stop()
             self?.postWakeSummary()
         }
-        idleWatcher.onIdle = { [weak self] in self?.autoSleepIdle() }
+        idleWatcher.onIdle = { [weak self] last in self?.autoSleepIdle(last: last) }
         heartbeat.onBeat   = { [weak self] in self?.sendHeartbeat() }
         thermal.start()
         notifier.start()
@@ -342,10 +344,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        // The one daily control: a checkable "Keep my Mac awake".
-        toggleItem = NSMenuItem(title: "Keep my Mac awake", action: #selector(toggleArmed), keyEquivalent: "")
-        toggleItem.target = self
-        menu.addItem(toggleItem)
+        // The daily control: two ways on. Both are always shown; the checkmark is
+        // the state, and clicking the checked one turns off (see ArmMode.swift).
+        untilOffItem = NSMenuItem(title: ArmMode.untilOff.menuTitle, action: #selector(chooseUntilOff), keyEquivalent: "")
+        untilOffItem.target = self
+        menu.addItem(untilOffItem)
+        untilQuietItem = NSMenuItem(title: ArmMode.untilQuiet.menuTitle, action: #selector(chooseUntilQuiet), keyEquivalent: "")
+        untilQuietItem.target = self
+        menu.addItem(untilQuietItem)
 
         statusLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         statusLineItem.isEnabled = false
@@ -477,13 +483,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // not clickable. Only the login-item disclosure has somewhere to go.
         noticeItem.action = WakeNotice.isActionable ? #selector(openLoginItemsFromNotice) : nil
         noticeItem.isEnabled = WakeNotice.isActionable
-        toggleItem.state = armed ? .on : .off
-        // A Mac that has been set up keeps a LIVE toggle even when the helper is
-        // unreachable. Clicking it is the only way into prepareAndRecover(), the flow
-        // that actually repairs an unreachable helper — so greying it out closed the
-        // one door that led anywhere, in exactly the state that needed it, and left
-        // the user a dead end telling them to go fix it by hand.
-        toggleItem.isEnabled = !needsSetup && entitled && !isRecovering
+        untilOffItem.state   = mode == .untilOff   ? .on : .off
+        untilQuietItem.state = mode == .untilQuiet ? .on : .off
+        // A Mac that has been set up keeps LIVE items even when the helper is
+        // unreachable. Clicking one is the only way into prepareAndRecover(), the
+        // flow that actually repairs an unreachable helper — so greying them out
+        // closed the one door that led anywhere, in exactly the state that needed
+        // it, and left the user a dead end telling them to go fix it by hand.
+        let live = !needsSetup && entitled && !isRecovering
+        untilOffItem.isEnabled = live
+        untilQuietItem.isEnabled = live
 
         // Trial / buy line — only while unlicensed.
         switch license.status {
@@ -504,10 +513,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusLineItem.title = "Finish the one-time setup to begin"
         } else if !entitled {
             statusLineItem.title = "Your free trial has ended \u{2014} buy to keep using lidawake"
-        } else if armed {
-            statusLineItem.title = "On \u{2014} you can close the lid"
         } else {
-            statusLineItem.title = "Off \u{2014} your Mac will sleep normally"
+            // On or off, and in quiet mode the live quiet age — recomputed on
+            // every menu open, like the rest of this line. The minute count is
+            // derived from the window, never typed (spec §9).
+            statusLineItem.title = StatusLine.text(mode: mode, quietAge: idleWatcher.quietAge,
+                                                   quietMinutes: max(1, Int(IdleWatcher.window / 60)))
         }
     }
 
@@ -515,9 +526,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem.button else { return }
         let base = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "lidawake")
         if armed {
-            // brand-blue laptop = actively keeping awake
-            let blue = NSColor(srgbRed: 90/255.0, green: 170/255.0, blue: 1.0, alpha: 1)
-            let img = base?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [blue]))
+            // brand-blue laptop = on until turned off; green = on until it goes quiet.
+            // Colour alone on one glyph is weak (T4.1) — the status line carries the
+            // mode in words; blue/green is the pair that survives common colour
+            // blindness, which red/green does not.
+            let blue  = NSColor(srgbRed: 90/255.0,  green: 170/255.0, blue: 1.0,      alpha: 1)
+            let green = NSColor(srgbRed: 52/255.0,  green: 199/255.0, blue: 89/255.0, alpha: 1)
+            let colour = mode == .untilQuiet ? green : blue
+            let img = base?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [colour]))
             img?.isTemplate = false
             button.image = img
         } else {
@@ -569,12 +585,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             openLoginItems: { [weak self] in self?.helperManager.openLoginItems() })
     }
 
-    @objc private func toggleArmed() {
+    @objc private func chooseUntilOff()   { choose(.untilOff) }
+    @objc private func chooseUntilQuiet() { choose(.untilQuiet) }
+
+    /// A click on either mode item. The transition is pure (ArmMode.swift), so
+    /// what reaches the helper and what reaches the detector is decided in one
+    /// tested place; this only carries it out.
+    private func choose(_ item: ArmMode) {
         guard !isRecovering else { return }   // busy recovering the helper — ignore clicks
-        if armed { disarm() } else { arm() }
+        let t = ModeTransition.clicked(item, while: mode)
+        switch t.helper {
+        case .arm:    arm(mode: t.mode)
+        case .disarm: disarm()
+        case .none:   switchMode(to: t.mode, detector: t.detector)
+        }
     }
 
-    private func arm() {
+    /// On in one mode, the other was clicked: only the detector changes. The
+    /// helper is not touched — both modes are the same arming (spec §11.1).
+    private func switchMode(to new: ArmMode, detector: ModeTransition.Detector) {
+        mode = new
+        switch detector {
+        case .start: idleWatcher.start()
+        case .stop:  idleWatcher.stop()
+        case .none:  break
+        }
+        NSLog("[lidawake] mode → \(new)")
+        refreshItems(); updateIcon()
+    }
+
+    private func arm(mode target: ArmMode) {
+        pendingMode = target
         // Paywall gate: no arming once the trial's over and there's no license.
         guard license.isEntitled else { showLicense(); return }
         // Genuine first-time setup ONLY → the friendly Welcome window. A helper that
@@ -613,7 +654,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wake.apply(keepScreenOn: Settings.keepScreenOnLidOpen)
         power.startMonitoring()
         lid.start()
-        armed = true
+        mode = pendingMode
+        if mode == .untilQuiet { idleWatcher.start() }
         refreshItems(); updateIcon()
         startWatchdogHeartbeat()
     }
@@ -676,7 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSLog("[lidawake] helper watchdog restored sleep while we were unresponsive — reconciling to off")
             self.wakeSummary.cancel()
             self.stopArmedWatchers()
-            self.armed = false
+            self.mode = .off
             self.refreshItems(); self.updateIcon()
             // Say so. This is the one stop path that used to go quiet, and
             // autoSleepIdle() already argues the case against exactly that:
@@ -695,15 +737,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if let err { NSLog("[lidawake] disarm error: \(err.message)") }
             self.stopArmedWatchers()
-            self.armed = false
+            self.mode = .off
             self.refreshItems(); self.updateIcon()
         }
     }
 
-    /// Triggered by the safety guards (thermal/power). Restore immediately with a
-    /// synchronous call — no async wait — then update UI.
-    /// T2.5 — nothing has happened for the whole window, so stop holding the Mac
-    /// awake and let it sleep normally.
+    /// "Until it goes quiet" ran out: nothing the detector could see happened for
+    /// the whole window (spec §11.2), so stop holding the Mac awake and let it
+    /// sleep normally. `last` is the last thing it did see, which the message
+    /// names.
     ///
     /// Does NOT go through autoDisarm(), which ends in notify() — an NSAlert that
     /// activates the app and blocks on runModal(). The entire premise of this
@@ -714,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Saying something is not optional. Turning lidawake off silently and
     /// leaving the user to find it off is precisely the surprise T2.2 exists to
     /// avoid — and worse here, because they would reasonably assume it failed.
-    private func autoSleepIdle() {
+    private func autoSleepIdle(last: Activity) {
         guard armed else { return }
         helperClient.setDisableSleepSync(false)
         // Close the session HERE, before stopArmedWatchers() cancels it, and
@@ -729,7 +771,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let session = wakeSummary.finish(battery: readPowerState().percent,
                                          peakThermal: thermal.peak)
         stopArmedWatchers()
-        armed = false
+        mode = .off
         refreshItems(); updateIcon()
         // Derived, not typed. A hard-coded "30 minutes" here would quietly become
         // a lie the moment IdleWatcher.window changed — and it already reads
@@ -738,21 +780,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // ONE message, not two. The stop and the session are the same event, and
         // the old pair could never both be read: this one is posted with the lid
         // physically shut, so it is never on screen when it is sent. Kept short —
-        // a notification gets about a second of attention.
-        var body = "Nothing had been happening for \(minutes) minutes."
-        var line = "lidawake turned itself off"
-        if let s = session {
-            body += " Awake \(s.body)."
-            line += " — \(s.body)"
-        }
-        announce(title: "lidawake turned itself off", body: body, menuLine: line)
+        // a notification gets about a second of attention. The words live in
+        // QuietReport so the selftest reads the same sentence.
+        announce(title: "lidawake turned itself off",
+                 body: QuietReport.body(minutes: minutes, last: last, session: session?.body),
+                 menuLine: QuietReport.menuLine(last: last, session: session?.body))
     }
 
     private func autoDisarm(_ why: String) {
         guard armed else { return }
         helperClient.setDisableSleepSync(false)
         stopArmedWatchers()
-        armed = false
+        mode = .off
         refreshItems(); updateIcon()
         notify("lidawake turned off", "Stopped because \(why).")
     }
@@ -836,7 +875,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard a.runModal() == .alertFirstButtonReturn else { return }
 
         if armed { helperClient.setDisableSleepSync(false) }   // never leave sleep disabled behind
-        stopArmedWatchers(); armed = false
+        stopArmedWatchers(); mode = .off
         let unregistered = helperManager.unregister()
         let loginItemRemoved = LoginItem.unregister()
         if let domain = Bundle.main.bundleIdentifier {
@@ -962,7 +1001,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func prepareAndRecover() {
         guard !isRecovering else { return }
         isRecovering = true
-        preparingWindow.model.onRetry = { [weak self] in self?.preparingWindow.close(); self?.arm() }
+        preparingWindow.model.onRetry = { [weak self] in
+            guard let self else { return }
+            self.preparingWindow.close()
+            self.arm(mode: self.pendingMode)   // the mode the click that got us here asked for
+        }
         preparingWindow.model.onOpenLoginItems = { [weak self] in self?.helperManager.openLoginItems() }
         preparingWindow.model.onOpenApplications = {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications"))
