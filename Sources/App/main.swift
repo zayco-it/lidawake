@@ -353,7 +353,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         untilQuietItem.target = self
         menu.addItem(untilQuietItem)
         // The tooltips are the only place the app explains the two modes, and both
-        // say where an agent running in a loop belongs (ArmMode.toolTip).
+        // say where an agent running in a loop belongs — which, since a program's
+        // request to stay awake counts, depends on how long it waits (ArmMode.toolTip).
         let quietMinutes = max(1, Int(IdleWatcher.window / 60))
         untilOffItem.toolTip = ArmMode.untilOff.toolTip(quietMinutes: quietMinutes)
         untilQuietItem.toolTip = ArmMode.untilQuiet.toolTip(quietMinutes: quietMinutes)
@@ -519,11 +520,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else if !entitled {
             statusLineItem.title = "Your free trial has ended \u{2014} buy to keep using lidawake"
         } else {
-            // On or off, and in quiet mode the live quiet age — recomputed on
-            // every menu open, like the rest of this line. The minute count is
-            // derived from the window, never typed (spec §9).
+            // On or off, and in quiet mode the live quiet age — or who is asking
+            // the Mac to stay awake — recomputed on every menu open, like the rest
+            // of this line. The minute count is derived from the window, never
+            // typed (spec §9).
             statusLineItem.title = StatusLine.text(mode: mode, quietAge: idleWatcher.quietAge,
-                                                   quietMinutes: max(1, Int(IdleWatcher.window / 60)))
+                                                   quietMinutes: max(1, Int(IdleWatcher.window / 60)),
+                                                   heldBy: idleWatcher.heldBy)
         }
     }
 

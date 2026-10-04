@@ -27,24 +27,27 @@ enum ArmMode: CaseIterable {
 
     /// The only place the app explains the two modes: the tooltip on each item.
     ///
-    /// BOTH say where an agent running in a loop belongs, in those words. It is
-    /// the gap that matters most to the people who use lidawake — an agent that
-    /// polls now and then and waits in between looks quiet to every signal, so
-    /// quiet mode stops it — and a gap nobody is told about is a broken promise
-    /// (spec §11.1, §11.4). `quietMinutes` is derived, never typed.
+    /// BOTH say where an agent running in a loop belongs — the question the
+    /// people who use lidawake actually have. An agent is seen by its request
+    /// to stay awake, which Claude Code makes for every turn and for nothing in
+    /// between (E13a, spec §11.6.5): so it keeps quiet mode on for as long as
+    /// its checks are less than the window apart, and a longer wait is what the
+    /// other mode is for. Claude Code is NAMED because it is the one that was
+    /// measured; "AI agents" in general would be a promise nobody checked.
+    /// `quietMinutes` is derived, never typed.
     func toolTip(quietMinutes: Int) -> String {
         switch self {
         case .off:
             return ""
         case .untilOff:
             return "Stays on until you turn it off, or until your Mac gets too hot or the battery runs low. "
-                + "Use this for anything that works in bursts with long waits in between \u{2014} "
-                + "an AI agent running in a loop belongs here."
+                + "Use this for anything that waits longer than \(quietMinutes) minutes between bursts of work."
         case .untilQuiet:
             return "Turns itself off \(quietMinutes) minutes after the last sign of activity: you using the Mac, "
-                + "sound or video playing, one of your programs working hard, the graphics chip, or steady network traffic. "
-                + "An AI agent running in a loop looks quiet between its checks and would be stopped \u{2014} "
-                + "use \u{201C}\(ArmMode.untilOff.menuTitle)\u{201D} for that."
+                + "sound or video playing, one of your programs working hard or asking the Mac to stay awake, "
+                + "the graphics chip, or steady network traffic. "
+                + "An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code does \u{2014} "
+                + "keeps this on, provided it checks in more often than every \(quietMinutes) minutes."
         }
     }
 }
@@ -78,15 +81,19 @@ struct ModeTransition: Equatable {
 /// The status line under the two items while lidawake is on. `quietAge` is the
 /// detector's current quiet age, nil when it is not running; `quietMinutes` is
 /// the window, derived rather than typed so the sentence stays true under the
-/// test hook that shortens it.
+/// test hook that shortens it. `heldBy` is whoever is asking the Mac to stay
+/// awake right now: named here because whoever opens the menu has just touched
+/// the Mac, so the quiet age alone always reads "active now" — and a program
+/// that never lets go would keep quiet mode on with nothing to say why.
 enum StatusLine {
-    static func text(mode: ArmMode, quietAge: TimeInterval?, quietMinutes: Int) -> String {
+    static func text(mode: ArmMode, quietAge: TimeInterval?, quietMinutes: Int, heldBy: String?) -> String {
         switch mode {
         case .off:      return "Off \u{2014} your Mac will sleep normally"
         case .untilOff: return "On \u{2014} you can close the lid"
         case .untilQuiet:
             let age: String
-            if let quietAge, quietAge >= 60 { age = "quiet for \(Int(quietAge / 60)) min" }
+            if let heldBy { age = "kept on by \(heldBy)" }
+            else if let quietAge, quietAge >= 60 { age = "quiet for \(Int(quietAge / 60)) min" }
             else { age = "active now" }
             return "On \u{2014} stops after \(quietMinutes) min of quiet (\(age))"
         }

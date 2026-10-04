@@ -39,10 +39,11 @@ built to be careful:
 - **Thermal cutoff** — if the Mac gets too hot, it disarms automatically.
 - **Can turn itself off when things go quiet** — choose “Keep awake until it goes quiet” and
   it lets your Mac sleep 30 minutes after the last sign of activity: you using it, sound or
-  video playing, one of your programs working hard, the graphics chip, or steady network
-  traffic. What macOS does for itself in the background doesn’t count. **An AI agent running
-  in a loop looks quiet between its checks — use “Keep awake until I turn it off” for that**,
-  as for anything else that works in bursts with long waits in between.
+  video playing, one of your programs working hard or asking the Mac to stay awake, the
+  graphics chip, or steady network traffic. What macOS does for itself in the background
+  doesn’t count. **An AI agent that asks the Mac to stay awake while it works — Claude Code
+  does — keeps it on, as long as it checks in more often than every 30 minutes**; for
+  anything that waits longer between bursts, use “Keep awake until I turn it off”.
 - **Always restores sleep** — on quit, crash, power loss, or if lidawake itself
   freezes while armed. The helper keeps its own watchdog: the app checks in every
   15 seconds, and if check-ins stop for 90 seconds the helper restores normal

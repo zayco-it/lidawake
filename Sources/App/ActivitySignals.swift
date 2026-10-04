@@ -1,6 +1,7 @@
-// The readers behind "Keep awake until it goes quiet": six signals, read from
-// the system once a tick. The rule that uses them, and the two classification
-// rules they feed, are in IdleWatcher.swift — this file is only the reading.
+// The readers behind "Keep awake until it goes quiet": seven signals, read from
+// the system once a tick — and the keep-awake list twice more in between. The
+// rule that uses them, and the classification rules they feed, are in
+// IdleWatcher.swift — this file is only the reading.
 //
 // WHAT IS READ, AND WHAT IS THROWN AWAY. Said out loud because none of it asks
 // permission: no entitlement, no prompt, nothing in System Settings, and no
@@ -8,12 +9,19 @@
 //
 //   input      CGEventSource: seconds since the last hardware input. One
 //              number. Not which key, not which app, not which device.
-//   sound and  IOPMCopyAssertionsByProcess: the power-assertion table. macOS
-//   video      hands over the WHOLE table — every asserting process, its name
-//              and its reason. Two facts are kept: whether coreaudiod holds a
-//              system-sleep assertion, and the names of processes holding a
-//              display-sleep one (to say "video playing in ‹app›"). Everything
-//              else is discarded here, on the spot.
+//   sound,     IOPMCopyAssertionsByProcess: the power-assertion table. macOS
+//   video and  hands over the WHOLE table — every asserting process, in every
+//   requests   account, its name and its reason. Three facts are kept: whether
+//              coreaudiod holds a system-sleep assertion; the names of
+//              processes holding a display-sleep one (to say "video playing in
+//              ‹app›"); and who, among the user's programs, is asking the Mac
+//              to stay awake. For that last one the holder's path, parent and
+//              account are looked up — for any account, which macOS allows —
+//              and A HOLDER IN ANOTHER USER'S ACCOUNT IS COUNTED BUT NEVER
+//              NAMED: its name is dropped in the rule, before anything is kept,
+//              shown or logged. (Root's are named: a system-wide daemon is
+//              nobody's private app.) Everything else is discarded here, on
+//              the spot.
 //   programs   libproc: CPU time, parent pid and executable path of this
 //              user's own processes. Kept: a name and a number for those using
 //              real CPU. Other users' and root's processes cannot be read.
@@ -73,11 +81,20 @@ final class SystemActivitySource: ActivitySource {
         if let rows = Self.assertionRows() {
             r.audioHeld = AssertionRule.audioHeld(rows)
             r.videoHolders = AssertionRule.videoHolders(rows, ownPid: getpid())
+            r.requestHolders = Self.requestHolders(rows)
         }
         r.programCores = programCores()
         r.gpuPercent = Self.gpuPercent()
         r.networkKBps = networkKBps()
         return r
+    }
+
+    func readRequests() -> [String]? {
+        Self.assertionRows().map(Self.requestHolders)
+    }
+
+    private static func requestHolders(_ rows: [AssertionRow]) -> [String] {
+        AssertionRule.requestHolders(rows, ownPid: getpid(), ownUid: getuid(), lookup: processFacts)
     }
 
     // MARK: - Presence
@@ -93,7 +110,7 @@ final class SystemActivitySource: ActivitySource {
         return s.isFinite && s >= 0 ? s : nil
     }
 
-    // MARK: - Sound and video
+    // MARK: - Sound, video and keep-awake requests
 
     /// The assertion table, reduced to four fields per row. nil unless the call
     /// SUCCEEDS: a powerd that cannot be reached answers `kIOReturnNotFound`
@@ -115,6 +132,27 @@ final class SystemActivitySource: ActivitySource {
             }
         }
         return rows
+    }
+
+    /// Path, parent, account and name of ONE process — any process. `sysctl`
+    /// and `proc_pidpath` answer for root's and other accounts' too (verified
+    /// from a Standard account, macOS 27.0.1), which the CPU reader's calls
+    /// below do not; that is why a request can be attributed across accounts
+    /// and CPU cannot. nil when there is no such process any more. The account
+    /// is the REAL uid — whose session it is, not what it is allowed to do.
+    static func processFacts(_ pid: Int32) -> ProcessFacts? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        var path = [CChar](repeating: 0, count: 4096)
+        let n = proc_pidpath(pid, &path, UInt32(path.count))
+        let file = n > 0 ? String(cString: path) : ""
+        let comm = withUnsafeBytes(of: &info.kp_proc.p_comm) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        return ProcessFacts(path: file, ppid: info.kp_eproc.e_ppid, uid: info.kp_eproc.e_pcred.p_ruid,
+                            name: WorkRule.wholeName(comm: comm, path: file))
     }
 
     // MARK: - Your programs

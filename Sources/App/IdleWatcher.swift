@@ -6,8 +6,9 @@
 // 30 s. Nothing learns, nothing adapts, every number is fixed, and the message
 // that turns lidawake off names the last thing seen and when.
 //
-// Six signals, of two kinds:
-//   declared — input age, sound, video: read as they are, instantaneous.
+// Seven signals, of two kinds:
+//   declared — input age, sound, video, and a keep-awake request from one of
+//              your programs: read as they are, instantaneous.
 //   load     — a program's CPU, the graphics chip, the network: bursty, so each
 //              is the MEDIAN of the trailing ten samples (five minutes) against
 //              a fixed threshold. The median's only job is spike immunity; the
@@ -30,22 +31,30 @@
 // for an hour and a half, and it was dropped (2026-10-04). CPU is counted per
 // process, for the user's own programs only — see `WorkRule`.
 //
-// What this deliberately does not see is spec §11.4. The one that matters most
-// to the people who use lidawake: AN AGENT RUNNING IN A LOOP looks quiet
-// between its checks and is stopped after 30 minutes. That is what "Keep awake
-// until I turn it off" is for, and the menu says so (ArmMode.swift).
+// AN AGENT IN A LOOP is seen by what it asks for, not by what it uses. Between
+// its checks it uses nothing, and every load signal reads quiet. But Claude
+// Code asks macOS to stay awake for each turn it works — a `caffeinate` child,
+// from the turn's first second until about 30 s after its last (E13a, spec
+// §11.6.5) — and holds nothing while it waits. So a request held by one of the
+// user's programs is a signal (2026-10-04): each check resets the 30 minutes,
+// and a loop that waits less than that stays on. The whole request can be as
+// short as 31 s, which a 30 s tick sees once at best, so the keep-awake list
+// alone is read three times a tick — every 10 s. A loop that waits LONGER than
+// the window is still stopped, unless it asks for the wait itself; the menu
+// says so (ArmMode.swift). The rest of what is not seen is spec §11.4.
 //
-// This file has no system calls in it: the policy, the two classification
-// rules and the sentences, all testable without a machine. The readers are in
+// This file has no system calls in it: the policy, the classification rules
+// and the sentences, all testable without a machine. The readers are in
 // ActivitySignals.swift.
 
 import Foundation
 
-/// The six things the detector can see. The order is the tie-break when two
+/// The seven things the detector can see. The order is the tie-break when two
 /// signals share the same last moment — presence first, so "you using the Mac"
-/// is what gets named when it and "network traffic" are both now.
+/// is what gets named when it and "network traffic" are both now; and what a
+/// program ASKED for before what it used, so an agent is named by its request.
 enum Signal: Int, CaseIterable, Comparable {
-    case presence, audio, video, program, graphics, network
+    case presence, audio, video, request, program, graphics, network
     static func < (a: Signal, b: Signal) -> Bool { a.rawValue < b.rawValue }
 }
 
@@ -53,12 +62,13 @@ enum Signal: Int, CaseIterable, Comparable {
 struct Activity: Equatable {
     let signal: Signal
     let at: Date
-    /// The app or process name, for video and program — the part of the
-    /// sentence that names something. Nil for the rest.
+    /// The app or process name, for video, request and program — the part of
+    /// the sentence that names something. Nil for the rest.
     let detail: String?
-    /// False when the signal counted because it could NOT be read. Such an
-    /// activity is always "now", so it never reaches the stop message; it shows
-    /// only in the log line under the test hook.
+    /// False when the signal counted because it could NOT be read. While that
+    /// lasts it is always "now" and nothing stops. But one failed read followed
+    /// by good ones is a moment like any other, and can be the last one — so
+    /// its words have to stand in the stop message too.
     let readable: Bool
 
     init(_ signal: Signal, at: Date, detail: String? = nil, readable: Bool = true) {
@@ -71,11 +81,12 @@ struct Activity: Equatable {
     /// "you using the Mac", "video playing in QuickTime Player", "Ollama working"…
     /// The customer's words (positioning principle 4), never a counter's name.
     var description: String {
-        guard readable else { return "\(subject) could not be checked" }
+        guard readable else { return "a moment when \(subject) could not be checked" }
         switch signal {
         case .presence: return "you using the Mac"
         case .audio:    return "sound playing"
         case .video:    return detail.map { "video playing in \($0)" } ?? "video playing"
+        case .request:  return "\(detail ?? "one of your programs") asking the Mac to stay awake"
         case .program:  return detail.map { "\($0) working" } ?? "one of your programs working"
         case .graphics: return "the graphics chip busy"
         case .network:  return "network traffic"
@@ -87,6 +98,7 @@ struct Activity: Equatable {
         case .presence: return "input"
         case .audio:    return "sound"
         case .video:    return "video"
+        case .request:  return "keep-awake requests"
         case .program:  return "your programs"
         case .graphics: return "the graphics chip"
         case .network:  return "the network"
@@ -109,6 +121,7 @@ struct Readings {
     var presenceAge: TimeInterval? = nil         // seconds since the last hardware input event
     var audioHeld: Bool? = nil                   // coreaudiod holds its assertion
     var videoHolders: [String]? = nil            // names holding a display-sleep assertion, lidawake excluded
+    var requestHolders: [String]? = nil          // who is asking the Mac to stay awake (AssertionRule.requestHolders)
     var programCores: [Program: Double]? = nil   // this tick's core-equivalents per WORK process
     var gpuPercent: Double? = nil                // IOAccelerator Device Utilization %
     var networkKBps: Double? = nil               // non-loopback bytes, both directions
@@ -177,6 +190,12 @@ struct QuietPolicy {
     /// detector is itself activity — the user just clicked.
     private(set) var last: [Signal: Activity] = [:]
 
+    /// Who is asking the Mac to stay awake as of the last look at the list —
+    /// nil when nobody is, or when the list could not be read. For the status
+    /// line: a program that holds a request for ever keeps quiet mode on for
+    /// ever, and this is how that explains itself.
+    private(set) var heldBy: String?
+
     private var graphics: MedianWindow
     private var network: MedianWindow
     private var programs: [Program: MedianWindow] = [:]
@@ -198,6 +217,8 @@ struct QuietPolicy {
 
         if let holders = r.videoHolders { if let h = holders.first { note(Activity(.video, at: now, detail: h)) } }
         else { note(.unreadable(.video, at: now)) }
+
+        observeRequests(r.requestHolders, at: now)
 
         // Your programs: one median per process. A process that was seen before
         // and is absent this tick reads as 0, so it decays; a window that has
@@ -221,6 +242,15 @@ struct QuietPolicy {
         var a: Activity?
         (graphics, a) = load(graphics, r.gpuPercent,  .graphics, thresholds.gpuPercent,  now); if let a { note(a) }
         (network,  a) = load(network,  r.networkKBps, .network,  thresholds.networkKBps, now); if let a { note(a) }
+    }
+
+    /// The keep-awake list by itself. The full tick calls it with the rest; the
+    /// watcher also calls it between ticks, because a request can come and go
+    /// inside one (see the header). Seeing it more often can only add activity.
+    mutating func observeRequests(_ holders: [String]?, at now: Date) {
+        heldBy = holders?.first
+        if let holders { if let h = holders.first { note(Activity(.request, at: now, detail: h)) } }
+        else { note(.unreadable(.request, at: now)) }
     }
 
     /// One load signal's step: the window with this sample added, and the
@@ -252,7 +282,7 @@ struct QuietPolicy {
     func shouldStop(at now: Date) -> Bool { quietAge(at: now) >= thresholds.quietWindow }
 }
 
-// MARK: - The two classification rules
+// MARK: - The classification rules
 
 /// One row of the power-assertion table, reduced to what the rules read.
 /// `trueType` is `AssertionTrueType`, NOT `AssertType`: the declared type is
@@ -266,10 +296,33 @@ struct AssertionRow {
     let name: String
 }
 
-/// Sound and video, as other software declares them (spec §11.3, §11.3.1).
+/// What the request rule needs to know about a process: where it runs from,
+/// who started it, and whose it is. `name` is what the system calls it.
+struct ProcessFacts {
+    let path: String
+    let ppid: Int32
+    let uid: UInt32
+    let name: String
+}
+
+/// Sound, video and keep-awake requests, as other software declares them
+/// (spec §11.3, §11.3.1, §11.3.3).
 enum AssertionRule {
     static let systemSleep  = "PreventUserIdleSystemSleep"
     static let displaySleep = "PreventUserIdleDisplaySleep"
+    /// The two ways of asking that the Mac itself stay awake: `caffeinate -i`
+    /// and `-s`. Legacy names (`NoIdleSleepAssertion`) arrive as the first, by
+    /// true type. A display request is not here — that is video's.
+    static let requestTypes: Set<String> = [systemSleep, "PreventSystemSleep"]
+    static let caffeinate = "/usr/bin/caffeinate"
+    /// What a holder in another PERSON's account is called, everywhere. On a
+    /// shared Mac one person does not get to read in a menu which programs
+    /// another is running (product owner, 2026-10-04), so the name is dropped
+    /// HERE — it never reaches the policy, the status line, the notice or the
+    /// log. Root is not a person: a root daemon is nobody's private app, and
+    /// its name is the only clue when something keeps quiet mode on for ever,
+    /// so root's holders are named.
+    static let otherAccount = "a program in another account"
     /// How WakeAssertionManager names both of ours.
     static let ownPrefix = "it.zayco.lidawake"
 
@@ -285,18 +338,53 @@ enum AssertionRule {
         rows.contains { $0.process == "coreaudiod" && $0.trueType == systemSleep }
     }
 
+    /// One of lidawake's own. Own pid is NOT enough — a second account can run
+    /// its own lidawake, which holds both of ours while it is on (measured, two
+    /// accounts on one Mac) — so they are known by process and by name too.
+    static func isOurs(_ r: AssertionRow, ownPid: Int32) -> Bool {
+        r.pid == ownPid || r.process == "lidawake" || r.name.hasPrefix(ownPrefix)
+    }
+
     /// Video: a display-sleep assertion from anything that is not lidawake.
-    /// Own pid is NOT enough — a second account can run its own lidawake, which
-    /// holds exactly this type while its screen switch is on (measured, two
-    /// accounts on one Mac) — so ours are excluded by name and by process too.
     /// powerd's `delayDisplayOff` has a true type of its own and never matches.
     static func videoHolders(_ rows: [AssertionRow], ownPid: Int32) -> [String] {
         var seen = Set<String>(), out: [String] = []
-        for r in rows where r.trueType == displaySleep
-            && r.pid != ownPid && r.process != "lidawake" && !r.name.hasPrefix(ownPrefix) {
+        for r in rows where r.trueType == displaySleep && !isOurs(r, ownPid: ownPid) {
             if seen.insert(r.process).inserted { out.append(r.process) }
         }
         return out
+    }
+
+    /// A keep-awake request: a system-sleep assertion held by one of the user's
+    /// PROGRAMS — the same test as for CPU (`WorkRule`), so macOS's own holders
+    /// of this very busy type (bluetoothd, runningboardd, AddressBookSourceSync,
+    /// coreaudiod, powerd…) are out without a list, and lidawake's own are out
+    /// the way they are for video. Across an idle night nothing passed (E11);
+    /// an agent's every turn does (E13a).
+    ///
+    /// `caffeinate` is named by whoever started it — "claude", not "caffeinate"
+    /// — because that is who asked. Left running with no parent, it is itself.
+    ///
+    /// Holders in other accounts COUNT — an agent in one account and lidawake
+    /// in another is a real arrangement — but another user's are never named:
+    /// see `otherAccount`. Root's are named like the user's own.
+    ///
+    /// `lookup` answers for a pid, or nil if the process is gone — and then so
+    /// is its request. A process that exists but whose path cannot be read has
+    /// an empty path, which `WorkRule` counts as work: unreadable is activity.
+    /// The user's own names come first, in a stable order.
+    static func requestHolders(_ rows: [AssertionRow], ownPid: Int32, ownUid: UInt32,
+                               lookup: (Int32) -> ProcessFacts?) -> [String] {
+        var mine = Set<String>(), other = false, looked = Set<Int32>()
+        for r in rows where requestTypes.contains(r.trueType) && !isOurs(r, ownPid: ownPid) {
+            guard looked.insert(r.pid).inserted, let p = lookup(r.pid) else { continue }
+            guard WorkRule.isWork(path: p.path, ppid: p.ppid) else { continue }
+            guard p.uid == ownUid || p.uid == 0 else { other = true; continue }
+            var who = (path: p.path, name: p.name.isEmpty ? r.process : p.name)
+            if p.path == caffeinate, p.ppid > 1, let parent = lookup(p.ppid) { who = (parent.path, parent.name) }
+            mine.insert(WorkRule.displayName(path: who.path, processName: who.name))
+        }
+        return mine.sorted() + (other ? [otherAccount] : [])
     }
 }
 
@@ -321,6 +409,15 @@ enum WorkRule {
     static func isWork(path: String, ppid: Int32) -> Bool {
         if ppid != 1 { return true }          // something other than launchd started it
         return !systemPrefixes.contains { path.hasPrefix($0) }
+    }
+
+    /// `sysctl` hands back a process's name in a 16-byte field, so a longer one
+    /// arrives cut short — "AddressBookSourc". When the executable's own file
+    /// name starts with exactly those 16, that is the whole of it.
+    static func wholeName(comm: String, path: String) -> String {
+        guard comm.utf8.count == 16, let leaf = path.split(separator: "/").last.map(String.init),
+              leaf.hasPrefix(comm) else { return comm }
+        return leaf
     }
 
     /// The name the message uses: the outermost `.app` the executable lives in
@@ -348,6 +445,9 @@ protocol ActivitySource: AnyObject {
     /// Take the baselines the load signals measure against. Called at start.
     func prime()
     func read() -> Readings
+    /// The keep-awake list alone, for the looks between two ticks. nil if it
+    /// could not be read.
+    func readRequests() -> [String]?
 }
 
 /// Reads nothing: every signal unreadable, so the policy can never stop.
@@ -355,6 +455,7 @@ final class StubActivitySource: ActivitySource {
     init() {}
     func prime() {}
     func read() -> Readings { Readings() }
+    func readRequests() -> [String]? { nil }
 }
 
 /// The sentences the stop produces, composed here so the selftest reads the
@@ -406,6 +507,17 @@ final class IdleWatcher {
     static var sampleInterval: TimeInterval { interval(for: window) }
     static func interval(for window: TimeInterval) -> TimeInterval { max(1, window / 60) }
 
+    /// The keep-awake list is looked at this many times per tick: every 10 s at
+    /// the 30 s tick. An agent's request for a short turn lasts 31–36 s in all
+    /// (E13a) — one sighting at best on the tick alone, three or more this way.
+    /// Nothing else is read faster: the load signals' medians are counted in
+    /// ticks, and their five minutes stay five minutes.
+    static let requestReadsPerTick = 3
+    static var requestInterval: TimeInterval { requestInterval(for: window) }
+    static func requestInterval(for window: TimeInterval) -> TimeInterval {
+        interval(for: window) / TimeInterval(requestReadsPerTick)
+    }
+
     /// The measured thresholds with the window applied. Only the window scales;
     /// the median stays ten ticks, so under the hook it is ten shortened ticks.
     static var thresholds: Thresholds { thresholds(for: window) }
@@ -422,6 +534,7 @@ final class IdleWatcher {
     private var timer: Timer?
     private var policy: QuietPolicy?
     private var fired = false
+    private var looks = 0
 
     init(source: ActivitySource = StubActivitySource()) { self.source = source }
 
@@ -429,14 +542,14 @@ final class IdleWatcher {
     /// For the status line. Nil when the detector is not running.
     var quietAge: TimeInterval? { policy?.quietAge(at: Date()) }
     var lastActivity: Activity? { policy?.lastActivity }
+    /// Who is asking the Mac to stay awake right now, if anyone (≤ 10 s old).
+    var heldBy: String? { policy?.heldBy }
 
     func start() {
         guard timer == nil else { return }
-        source.prime()
-        policy = QuietPolicy(thresholds: Self.thresholds, start: Date())
-        fired = false
-        NSLog("[lidawake] quiet watch started — window \(Int(Self.window))s, sampling every \(Int(Self.sampleInterval))s")
-        let t = Timer(timeInterval: Self.sampleInterval, repeats: true) { [weak self] _ in self?.tick() }
+        begin(at: Date())
+        NSLog("[lidawake] quiet watch started — window \(Int(Self.window))s, sampling every \(Int(Self.sampleInterval))s, keep-awake requests every \(String(format: "%.3g", Self.requestInterval))s")
+        let t = Timer(timeInterval: Self.requestInterval, repeats: true) { [weak self] _ in self?.look(at: Date()) }
         // .common so menu tracking and modal panels don't stall sampling — the
         // same reason the heartbeat uses it.
         RunLoop.main.add(t, forMode: .common)
@@ -449,9 +562,23 @@ final class IdleWatcher {
         policy = nil; fired = false
     }
 
-    private func tick() {
+    /// start() without the timer — the selftest drives `look(at:)` itself.
+    func begin(at now: Date) {
+        source.prime()
+        policy = QuietPolicy(thresholds: Self.thresholds, start: now)
+        fired = false; looks = 0
+    }
+
+    /// One firing of the timer. Every third is the tick: everything is read and
+    /// the verdict taken. The two between read the keep-awake list only.
+    func look(at now: Date) {
+        looks += 1
+        if looks % Self.requestReadsPerTick == 0 { tick(at: now) }
+        else if !fired { policy?.observeRequests(source.readRequests(), at: now) }
+    }
+
+    private func tick(at now: Date) {
         guard !fired, var p = policy else { return }
-        let now = Date()
         p.observe(source.read(), at: now)
         policy = p
         let last = p.lastActivity

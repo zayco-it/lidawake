@@ -261,13 +261,20 @@ copied bundle loses its stapled ticket and Gatekeeper rejects it.
       checked; status "On — stops after 30 min of quiet (active now)". Leave the
       Mac alone and reopen the menu: the part in brackets becomes "(quiet for
       N min)" and N grows.
+- [ ] **Kept on by a program:** in quiet mode, run `caffeinate -i -t 60` in a
+      terminal and open the menu within the minute → the brackets read "(kept
+      on by zsh)" — the shell that started it. After the minute: "(active now)"
+      again. This is how a program that never lets go explains itself.
 - [ ] **Switching while on:** with one mode checked, click the other → the
       checkmark and the colour move, `pmset -g | grep SleepDisabled` reads `1`
       before, during and after, and no window, alert or notification appears.
 - [ ] **Clicking the checked mode** turns lidawake off, from either.
-- [ ] **Tooltips:** hover each item and read to the end. Both must say, in
-      words, that an AI agent running in a loop belongs in "Keep awake until I
-      turn it off". They are the only place the app explains the two modes.
+- [ ] **Tooltips:** hover each item and read to the end. "Until it goes quiet"
+      must say that an AI agent that asks the Mac to stay awake while it works —
+      Claude Code does — keeps it on, provided it checks in more often than
+      every 30 minutes. "Until I turn it off" must say it is for anything that
+      waits longer than 30 minutes between bursts of work. They are the only
+      place the app explains the two modes.
 - [ ] **Welcome window** (a fresh account, or §1): once set up it says to click
       "Keep awake until I turn it off" — the name of an item that exists.
 
@@ -539,9 +546,15 @@ open it again within the 30 s.
 
 > **What it is.** "Keep awake until it goes quiet" turns lidawake off 30 minutes
 > after the last thing it could see: you using the Mac, sound, video, one of your
-> programs at half a core or more, the graphics chip over 50 %, or network
-> traffic over 30 KB/s — the last three as a five-minute median, so a spike is
-> not work. macOS's own processes never count. A signal that cannot be read
+> programs asking the Mac to stay awake (`caffeinate`, or the same request made
+> directly), one of your programs at half a core or more, the graphics chip
+> over 50 %, or network traffic over 30 KB/s — the last three as a five-minute
+> median, so a spike is not work. macOS's own processes never count. Everything
+> is read every 30 s; the keep-awake list every 10 s, because an agent's request
+> for a short turn lasts barely half a minute. A program in **another user's
+> account** that asks counts too, and is never named: it is "a program in
+> another account" in the menu, the notice and the log. (Root's are named — a
+> root daemon is nobody's private app.) A signal that cannot be read
 > counts as activity. The header of `Sources/App/IdleWatcher.swift` is the short
 > version; `Sources/App/ActivitySignals.swift` says exactly what is read and what
 > is thrown away.
@@ -570,12 +583,19 @@ swiftc -O -parse-as-library Sources/App/IdleWatcher.swift Sources/App/ActivitySi
 LIDAWAKE_IDLE_SECONDS=120 /tmp/lidawake-activity-probe    # 2 minutes, a line every 2 s
 ```
 
+Between two lines it looks at the keep-awake list twice more, as the app does,
+and prints `asks: …` only when somebody is asking.
+
 - [ ] No column ever shows `??`.
 - [ ] `input` climbs while you keep your hands off and drops to ~0 when you
       touch a key or the trackpad.
 - [ ] Play a song → `sound YES` within a tick. **Pause** → `no` within a tick or two.
 - [ ] A video in QuickTime → `video QuickTime Player`. A muted video in Firefox
       → `video firefox`.
+- [ ] `caffeinate -i -t 40` in another terminal → `asks: zsh` on every look for
+      40 seconds, and "last: zsh asking the Mac to stay awake". Give Claude Code
+      something to do → `asks: claude` from the first second of the turn until
+      about half a minute after it ends, and nothing while it sits at its prompt.
 - [ ] `yes > /dev/null` in another terminal for six minutes (2-minute window:
       twenty seconds) → `programs: yes 1.00`, then "last: yes working". Ctrl-C it.
 - [ ] Hands off, nothing running → "WOULD TURN OFF NOW", with a sentence naming
@@ -608,21 +628,40 @@ app's own account of itself.
       it — "network traffic", "‹the tool› working", "the graphics chip busy".
 - [ ] **E13 — an AI agent running in a loop.** Quiet mode at the **real** 30
       minutes; `/tmp/lidawake-activity-probe > ~/Desktop/e13.log` in one
-      terminal; in another, Claude Code with `/loop` on an interval of several
-      minutes; hands off for 45 minutes. **Expected: it is stopped at about 30
-      minutes** — that is the gap the tooltips warn about. Keep the log either
-      way: it shows what each poll looks like to every signal, and
-      `pmset -g assertions | grep caffeinate` during a wait shows whether the
-      agent declares itself. If it is *not* stopped, the tooltips and the
-      CHANGELOG are wrong and get corrected before release.
+      terminal; Claude Code in another, **with any `Stop`-hook sound switched
+      off** (below). Two runs, hands off for each:
+      - **A loop that checks every few minutes** (`/loop 6m …`), 45 minutes →
+        **still on.** The log shows `asks: claude` for about half a minute at
+        each check and nothing between; the menu, opened during a check, reads
+        "(kept on by claude)".
+      - **A loop that waits longer than the window** (`/loop 1h …`, "This
+        session only" — `/loop` rounds odd intervals, and 35 minutes can become
+        30) → **off about 30 minutes after its first check**, the notice saying
+        "The last thing it saw was claude asking the Mac to stay awake".
+
+      With lidawake in one account and the agent in another, every "claude"
+      above reads **"a program in another account"** — the rule, not a fault.
+      If either run goes the other way, the tooltips and the CHANGELOG are
+      wrong and get corrected before release.
+
+      *The sound.* A `Stop` hook that plays a chime trips the **sound** signal
+      at about one check in ten (E13a: the chime lasts ~3 s) — enough to keep
+      the second run on at random and have it name "sound playing". It is set
+      in `~/.claude/settings.json` under `hooks` → `Stop` of the account the
+      agent runs in; take the entry out for the run and put it back after, and
+      start the agent's session after the change.
 - [ ] **E7 — every guard, in both modes.** Thermal, battery floor, unplug with
       battery use off, force-quit (§7) behave identically whether the glyph is
       blue or green.
 
 **Known, and not bugs** (they are named to the user where it matters): an agent
-in a loop is stopped; a muted video in Chrome, Edge, Brave, Arc or Comet is not
+in a loop that waits longer than 30 minutes between checks is stopped, and so
+is one that never asks the Mac to stay awake (only Claude Code was measured); a
+program that holds a keep-awake request and never lets go keeps it on for as
+long as it does, and the status line names it; a muted video in Chrome, Edge, Brave, Arc or Comet is not
 seen (QuickTime, Firefox and Safari are); work under another account or as root
-is not seen unless it uses sound, the network or the GPU; CPU-only work inside
+is not seen unless it uses sound, the network or the GPU, or asks the Mac to
+stay awake; CPU-only work inside
 Apple's built-in apps is not seen; and macOS's media analysis using the GPU can
 keep it on longer than it should, in which case the notice says "the graphics
 chip busy".
