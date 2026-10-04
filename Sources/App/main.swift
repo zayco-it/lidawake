@@ -83,7 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let lid            = LidMonitor()
     private let heartbeat      = Heartbeat()
     private let notifier       = Notifier()
-    private lazy var lidWarning = LidWarning(notifier: notifier)
+    private lazy var lidWarning: LidWarning = {
+        let warning = LidWarning(notifier: notifier)
+        // The warning is lidawake's own sound; quiet mode must not hear it as activity.
+        warning.onSound = { [weak self] seconds in self?.idleWatcher.ownSoundStarted(duration: seconds) }
+        return warning
+    }()
     private var wakeSummary    = WakeSummary()
     private let idleWatcher    = IdleWatcher(source: SystemActivitySource())
     private let settingsWindow = SettingsWindowController()

@@ -27,6 +27,17 @@ mut () {   # label, file under Sources/App, sed expression
   else print -r -- "  SURVIVED     $1"; survived=1; fi
 }
 
+# First, the source AS IT IS must compile and pass. Without this, a source that
+# does not compile reports every mutation "caught — does not compile", and a
+# broken build reads as a perfect score (it did, once: 2026-10-04).
+cp Sources/App/IdleWatcher.swift Sources/App/ArmMode.swift tools/idlewatcher-selftest.swift "$M"/
+if ! swiftc -O -parse-as-library "$M"/IdleWatcher.swift "$M"/ArmMode.swift "$M"/idlewatcher-selftest.swift -o "$M"/t 2>"$M"/base.err; then
+  print -r -- "THE UNMUTATED SOURCE DOES NOT COMPILE — nothing below would mean anything:"; grep -m3 'error' "$M"/base.err; rm -rf "$M"; exit 1
+fi
+if (( $("$M"/t | grep -c '  FAIL') > 0 )); then
+  print -r -- "THE UNMUTATED SELFTEST FAILS — fix that first:"; "$M"/t | grep -m3 '  FAIL'; rm -rf "$M"; exit 1
+fi
+
 print -r -- "mutations (each must be caught):"
 mut "an unreadable input read as nothing"        IdleWatcher.swift 's/else { note(.unreadable(.presence, at: now)) }/else { }/'
 mut "an unreadable load signal read as nothing"  IdleWatcher.swift 's/guard let value else { return (w, .unreadable(signal, at: now)) }/guard let value else { return (w, nil) }/'
@@ -37,6 +48,9 @@ mut "minimumSamples ignored"                     IdleWatcher.swift 's/guard coun
 mut "note() may move backwards"                  IdleWatcher.swift 's/if let old = last\[a.signal\], old.at > a.at { return }//'
 mut "tie goes to the later signal"               IdleWatcher.swift 's/(a.at, b.signal) < (b.at, a.signal)/(a.at, a.signal) < (b.at, b.signal)/'
 mut "program windows never decay"                IdleWatcher.swift 's/for program in programs.keys where cores\[program\] == nil { programs\[program\]?.add(0) }//'
+mut "sound: lidawake's own warning heard as sound" IdleWatcher.swift 's/if held, !isOwnSound(at: now) { note(Activity(.audio, at: now)) }/if held { note(Activity(.audio, at: now)) }/'
+mut "sound: our own sound mutes an unreadable table" IdleWatcher.swift 's/        else { note(.unreadable(.audio, at: now)) }/        else if !isOwnSound(at: now) { note(.unreadable(.audio, at: now)) }/'
+mut "sound: a later notice shortens the first"   IdleWatcher.swift 's/        if let old = ownSoundUntil, old > end { return }//'
 mut "sound: any holder of the type"              IdleWatcher.swift 's/rows.contains { $0.process == "coreaudiod" \&\& $0.trueType == systemSleep }/rows.contains { $0.process != "powerd" \&\& $0.trueType == systemSleep }/'
 mut "sound: coreaudiod holding anything"         IdleWatcher.swift 's/rows.contains { $0.process == "coreaudiod" \&\& $0.trueType == systemSleep }/rows.contains { $0.process == "coreaudiod" }/'
 mut "ours: known by our own pid only"            IdleWatcher.swift 's/        r.pid == ownPid || r.process == "lidawake" || r.name.hasPrefix(ownPrefix)/        r.pid == ownPid/'

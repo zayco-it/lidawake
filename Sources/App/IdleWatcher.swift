@@ -197,6 +197,14 @@ struct QuietPolicy {
     /// ever, and this is how that explains itself.
     private(set) var heldBy: String?
 
+    /// Until when sound is lidawake's OWN and not activity: the lid warning. It
+    /// plays through the same audio device as anything else, so `coreaudiod`
+    /// holds its assertion for it exactly as for music — and on the hardware
+    /// pass the notice then said "the last thing it saw was sound playing" to
+    /// someone who had played nothing (2026-10-04). Only a readable "held" is
+    /// ignored; an unreadable table is still activity.
+    private var ownSoundUntil: Date?
+
     private var graphics: MedianWindow
     private var network: MedianWindow
     private var programs: [Program: MedianWindow] = [:]
@@ -213,7 +221,7 @@ struct QuietPolicy {
         if let age = r.presenceAge { note(Activity(.presence, at: now.addingTimeInterval(-max(0, age)))) }
         else { note(.unreadable(.presence, at: now)) }
 
-        if let held = r.audioHeld { if held { note(Activity(.audio, at: now)) } }
+        if let held = r.audioHeld { if held, !isOwnSound(at: now) { note(Activity(.audio, at: now)) } }
         else { note(.unreadable(.audio, at: now)) }
 
         if let holders = r.videoHolders { if let h = holders.first { note(Activity(.video, at: now, detail: h)) } }
@@ -225,8 +233,11 @@ struct QuietPolicy {
         // and is absent this tick reads as 0, so it decays; a window that has
         // filled with zeros is forgotten.
         if let cores = r.programCores {
+            // Read before the loop: inside the subscript's `default:` it would be a
+            // second access to `self` while `programs` is being modified.
+            let capacity = thresholds.medianSamples
             for (program, c) in cores {
-                programs[program, default: MedianWindow(capacity: thresholds.medianSamples)].add(c)
+                programs[program, default: MedianWindow(capacity: capacity)].add(c)
             }
             for program in programs.keys where cores[program] == nil { programs[program]?.add(0) }
             var busiest: (name: String, median: Double)? = nil
@@ -243,6 +254,18 @@ struct QuietPolicy {
         var a: Activity?
         (graphics, a) = load(graphics, r.gpuPercent,  .graphics, thresholds.gpuPercent,  now); if let a { note(a) }
         (network,  a) = load(network,  r.networkKBps, .network,  thresholds.networkKBps, now); if let a { note(a) }
+    }
+
+    /// lidawake is about to make a sound of its own; what the audio signal
+    /// hears until `end` is that, not the user's. Later calls can only extend it.
+    mutating func ignoreOwnSound(until end: Date) {
+        if let old = ownSoundUntil, old > end { return }
+        ownSoundUntil = end
+    }
+
+    private func isOwnSound(at now: Date) -> Bool {
+        guard let end = ownSoundUntil else { return false }
+        return now < end
     }
 
     /// The keep-awake list by itself. The full tick calls it with the rest; the
@@ -545,6 +568,18 @@ final class IdleWatcher {
     var lastActivity: Activity? { policy?.lastActivity }
     /// Who is asking the Mac to stay awake right now, if anyone (≤ 10 s old).
     var heldBy: String? { policy?.heldBy }
+
+    /// How long after one of lidawake's own sounds ends the audio device can
+    /// still read as open: `coreaudiod` let go within 5 s of a pause on every
+    /// output measured (E10). Eight leaves room.
+    static let ownSoundTail: TimeInterval = 8
+
+    /// lidawake is playing a sound of `duration` seconds itself — the lid
+    /// warning. It must not count as "sound playing". Harmless if music is
+    /// playing too: that is still playing when this runs out.
+    func ownSoundStarted(duration: TimeInterval, at now: Date = Date()) {
+        policy?.ignoreOwnSound(until: now.addingTimeInterval(max(0, duration) + Self.ownSoundTail))
+    }
 
     func start() {
         guard timer == nil else { return }

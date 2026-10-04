@@ -613,14 +613,19 @@ and prints `asks: …` only when somebody is asking.
 **The hardware pass** — the signed test build over the shared install (how, and
 how to put it back, is in the results log for 1.5.0). Launch it from Terminal
 with `LIDAWAKE_IDLE_SECONDS=300` to keep each run to minutes, and once at the
-real 30 for E9a. Take the Mac's sleep state from `pmset -g log`, never from the
+real 30 for E9a. (A lid-shut spell shorter than five minutes gets no "Awake …"
+line in the notice — that is the wake summary's own rule, not a fault of a
+short window.) Take the Mac's sleep state from `pmset -g log`, never from the
 app's own account of itself.
 
 - [ ] **E9a — it turns off, lid shut on a monitor.** "Keep the screen on" **ON**
       in Settings, on **battery**, quiet mode, nothing running, hands off. →
       Off at the window; `pmset -g log` shows `Clamshell Sleep` seconds later;
       on opening the lid, the notice names the last activity and the time.
-- [ ] **E9b — lid shut, no display.** Same, with no monitor attached.
+- [ ] **E9b — lid shut, no display.** Same, with no monitor attached. With
+      battery use on, the lid warning sounds as the lid shuts — and **the notice
+      afterwards must not name it**: it says what happened before the warning
+      ("you using the Mac"), never "sound playing" for a sound nobody played.
 - [ ] **E9c — lid open.** Same, lid open on AC → off at the window, glyph back
       to monochrome, a notice with no "Awake …" line.
 - [ ] **E2 — it does not turn off under your hands.** Lid shut on a monitor, on

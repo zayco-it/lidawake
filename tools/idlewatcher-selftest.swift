@@ -30,6 +30,7 @@
 //   - another account's program named               → "another account's agent counts, and is not named"
 //   - root's holder left unnamed                    → "root's helper is nobody's private app: counted, and named"
 //   - the status line silent about the holder       → "quiet, held: names who"
+//   - lidawake's own warning heard as sound         → "our own warning is not sound"
 
 import Foundation
 
@@ -250,6 +251,33 @@ func watch(_ source: Scripted, limit: TimeInterval) -> (at: TimeInterval?, last:
         p = QuietPolicy(thresholds: T, start: t0)
         p.observeRequests([AssertionRule.otherAccount], at: at(10))
         expect("another account's request, in the message", p.lastActivity.description == "a program in another account asking the Mac to stay awake")
+
+        // lidawake's own lid warning plays through the same device as music. On the
+        // hardware pass (2026-10-04) it was read as "sound playing" and named in the note.
+        print("lidawake's own sound")
+        p = QuietPolicy(thresholds: T, start: t0)
+        p.ignoreOwnSound(until: at(40))
+        var own = quiet(now: at(30)); own.audioHeld = true
+        p.observe(own, at: at(30))
+        expect("our own warning is not sound", p.lastActivity.signal == .presence && p.lastActivity.at == t0, "\(p.lastActivity.description)")
+        own = quiet(now: at(60)); own.audioHeld = true
+        p.observe(own, at: at(60))
+        expect("…and sound after it has ended is sound again", p.lastActivity == Activity(.audio, at: at(60)))
+        p = QuietPolicy(thresholds: T, start: t0)
+        p.ignoreOwnSound(until: at(40)); p.ignoreOwnSound(until: at(35))
+        own = quiet(now: at(38)); own.audioHeld = true; p.observe(own, at: at(38))
+        expect("a second notice cannot shorten the first", p.lastActivity.signal == .presence)
+        p = QuietPolicy(thresholds: T, start: t0)
+        p.ignoreOwnSound(until: at(40))
+        own = quiet(now: at(30)); own.audioHeld = nil; p.observe(own, at: at(30))
+        expect("an unreadable table during our own sound is still activity", !p.lastActivity.readable && p.lastActivity.signal == .audio)
+        // The run that found it: a click, the lid shut on battery 8 s later, the warning, then nothing.
+        p = QuietPolicy(thresholds: T, start: t0)
+        p.ignoreOwnSound(until: at(8 + 1.3 + IdleWatcher.ownSoundTail))
+        stopped = run(&p, limit: 7200) { now in var r = quiet(now: now); r.audioHeld = now <= at(10); return r }
+        expect("the note names what came before the warning, and the stop is not delayed by it", stopped == 1800 && p.lastActivity.description == "you using the Mac", "stopped at \(stopped ?? -1), last \(p.lastActivity.description)")
+        let w2 = IdleWatcher(source: Scripted()); w2.begin(at: t0); w2.ownSoundStarted(duration: 1.3, at: at(8))
+        expect("the watcher allows the sound's length and eight seconds more", IdleWatcher.ownSoundTail == 8)
 
         // THE MEDIAN'S LAG. A load signal is "sustained" while the median of the
         // last ten samples is over the threshold, so after the load ENDS it stays

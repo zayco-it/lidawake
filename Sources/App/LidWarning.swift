@@ -68,6 +68,11 @@ final class LidWarning: NSObject, NSSoundDelegate {
     private var sounding: NSSound?
     private var fallback: DispatchWorkItem?
 
+    /// Called with the sound's length just before it plays. Quiet mode listens
+    /// for sound, and this one is ours: without the notice it reads the warning
+    /// as "sound playing" and says so in the note it leaves (IdleWatcher).
+    var onSound: ((TimeInterval) -> Void)?
+
     init(notifier: Notifier) {
         self.notifier = notifier
     }
@@ -107,6 +112,7 @@ final class LidWarning: NSObject, NSSoundDelegate {
         fallback = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (Self.testHold ?? sound.duration + 3),
                                       execute: work)
+        onSound?(Self.testHold ?? sound.duration)
         if !sound.play() {
             NSLog("[lidawake] lid warning: the sound would not play")
             finish()
