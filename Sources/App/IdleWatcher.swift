@@ -412,6 +412,29 @@ enum AssertionRule {
     }
 }
 
+/// Network traffic, counted per interface (spec §11.3).
+///
+/// The counters are per interface, and interfaces come and go: pull the cable
+/// of a dock that carries the network and its interface is gone, with every
+/// byte it ever counted. Summed into one total, that reads as the total going
+/// BACKWARDS — which the first version called "cannot be read", and so
+/// activity. On the hardware pass (2026-10-04) that made the first note after
+/// undock-close-the-lid-and-go say "the last thing it saw was a moment when
+/// the network could not be checked". An interface that leaves has simply
+/// stopped carrying traffic; so has one whose counter starts again; and one
+/// that has just appeared has no "before" to subtract. Each contributes
+/// nothing to that one interval, and the rest are counted as they are.
+enum NetworkRule {
+    static func kbps(before: [String: UInt64], now: [String: UInt64], seconds: TimeInterval) -> Double {
+        guard seconds > 0 else { return 0 }
+        var bytes: UInt64 = 0
+        for (name, n) in now {
+            if let b = before[name], n >= b { bytes += n - b }
+        }
+        return Double(bytes) / seconds / 1024.0
+    }
+}
+
 /// Whose CPU is it? (spec §11.3.2)
 ///
 /// A process is the user's WORK unless it is one of macOS's own: started by

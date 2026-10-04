@@ -626,6 +626,11 @@ app's own account of itself.
       battery use on, the lid warning sounds as the lid shuts — and **the notice
       afterwards must not name it**: it says what happened before the warning
       ("you using the Mac"), never "sound playing" for a sound nobody played.
+      If the network runs through the cable you pull (a dock, a monitor with an
+      Ethernet port), the notice must not say "a moment when the network could
+      not be checked" either — use a 10-minute window for this one
+      (`LIDAWAKE_IDLE_SECONDS=600`): under a shorter one the few seconds of
+      reconnecting over Wi-Fi are long enough to read as "network traffic".
 - [ ] **E9c — lid open.** Same, lid open on AC → off at the window, glyph back
       to monochrome, a notice with no "Awake …" line.
 - [ ] **E2 — it does not turn off under your hands.** Lid shut on a monitor, on

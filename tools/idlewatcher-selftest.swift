@@ -31,6 +31,8 @@
 //   - root's holder left unnamed                    → "root's helper is nobody's private app: counted, and named"
 //   - the status line silent about the holder       → "quiet, held: names who"
 //   - lidawake's own warning heard as sound         → "our own warning is not sound"
+//   - a new interface's lifetime counted as traffic → "an interface that appears adds nothing …"
+//   - a counter that went backwards subtracted      → "a counter that starts again is skipped …" (traps)
 
 import Foundation
 
@@ -333,6 +335,21 @@ func watch(_ source: Scripted, limit: TimeInterval) -> (at: TimeInterval?, last:
             worst = max(worst, (s ?? 0) - 600 - 1800)
         }
         expect("the lag after a load ends is at most half the window", worst <= Double(T.medianSamples / 2) * tick, "worst \(worst)s")
+
+        // Found on the hardware pass, 2026-10-04: the network ran through a monitor's
+        // cable; pulling it took the interface and its counters, the TOTAL went
+        // backwards, and the note said "a moment when the network could not be checked".
+        print("the network, per interface")
+        let MB: UInt64 = 1_048_576
+        expect("a steady download: 42 KB/s", abs(NetworkRule.kbps(before: ["en0": 500 * MB], now: ["en0": 500 * MB + 42 * 1024 * 30], seconds: 30) - 42) < 0.001)
+        expect("two interfaces add up", abs(NetworkRule.kbps(before: ["en0": 10, "en8": 20], now: ["en0": 10 + 30720, "en8": 20 + 30720], seconds: 30) - 2) < 0.001)
+        let undocked = NetworkRule.kbps(before: ["en8": 900 * MB, "en0": 263 * MB], now: ["en0": 263 * MB + 20 * 1024], seconds: 2)
+        expect("an interface that leaves stops contributing — and the rest is still a number", abs(undocked - 10) < 0.001, "\(undocked)")
+        expect("…even when it was the only one", NetworkRule.kbps(before: ["en8": 900 * MB], now: [:], seconds: 30) == 0)
+        expect("an interface that appears adds nothing on its first reading", NetworkRule.kbps(before: ["en0": 5 * MB], now: ["en0": 5 * MB, "en8": 4 * MB], seconds: 30) == 0)
+        expect("…and counts from its second", abs(NetworkRule.kbps(before: ["en0": 5 * MB, "en8": 4 * MB], now: ["en0": 5 * MB, "en8": 4 * MB + 61440], seconds: 30) - 2) < 0.001)
+        expect("a counter that starts again is skipped for that interval, the others counted", abs(NetworkRule.kbps(before: ["en0": 4000 * MB, "en1": 100], now: ["en0": 3 * MB, "en1": 100 + 30720], seconds: 30) - 1) < 0.001)
+        expect("no time passed: no rate", NetworkRule.kbps(before: ["en0": 1], now: ["en0": 99999], seconds: 0) == 0)
 
         print("E5 replay — the run the old rule got wrong")
         p = QuietPolicy(thresholds: T, start: t0)

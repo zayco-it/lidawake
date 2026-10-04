@@ -26,8 +26,8 @@
 //              user's own processes. Kept: a name and a number for those using
 //              real CPU. Other users' and root's processes cannot be read.
 //   graphics   IOKit registry: the GPU's utilisation, one percentage.
-//   network    getifaddrs: bytes in and out, summed over interfaces. A total —
-//              not which host, not which process.
+//   network    getifaddrs: bytes in and out, per interface. Totals — not which
+//              host, not which process.
 //
 // Nothing is stored between ticks but the counters needed to take a
 // difference, and no history is kept. ONE thing is written down, once: the
@@ -59,7 +59,7 @@ final class SystemActivitySource: ActivitySource {
 
     private var lastProcesses: [Int32: UInt64] = [:]
     private var lastProcessesAt: Date?
-    private var lastNetBytes: UInt64?
+    private var lastNetBytes: [String: UInt64]?
     private var lastNetAt: Date?
     private let machToNanoseconds: Double
 
@@ -254,35 +254,32 @@ final class SystemActivitySource: ActivitySource {
 
     // MARK: - Network
 
-    /// KB/s across every real interface since the last tick. nil if the
-    /// counters cannot be read, or went BACKWARDS — an interface that left took
-    /// its bytes with it, and a difference across that is not a small number,
-    /// it is no number.
+    /// KB/s since the last tick, counted per interface (NetworkRule): one that
+    /// left, appeared or started its counter again contributes nothing to this
+    /// interval. nil ONLY if the counters cannot be read at all — that is the
+    /// one case that counts as activity.
     private func networkKBps() -> Double? {
         guard let bytes = Self.netBytes() else { lastNetBytes = nil; lastNetAt = nil; return nil }
         let at = Date()
         defer { lastNetBytes = bytes; lastNetAt = at }
         guard let before = lastNetBytes, let was = lastNetAt else { return 0 }   // first read: nothing to compare
-        let dt = at.timeIntervalSince(was)
-        guard dt > 0 else { return 0 }
-        guard bytes >= before else { return nil }
-        return Double(bytes - before) / dt / 1024.0
+        return NetworkRule.kbps(before: before, now: bytes, seconds: at.timeIntervalSince(was))
     }
 
-    /// Bytes in+out across every real interface. Loopback excluded — a Mac
+    /// Bytes in+out of every real interface, by name. Loopback excluded — a Mac
     /// talking to itself is not a transfer worth staying awake for.
-    private static func netBytes() -> UInt64? {
+    private static func netBytes() -> [String: UInt64]? {
         var addrs: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&addrs) == 0, let first = addrs else { return nil }
         defer { freeifaddrs(addrs) }
-        var total: UInt64 = 0
+        var out: [String: UInt64] = [:]
         for ptr in sequence(first: first, next: { $0.pointee.ifa_next }) {
             let ifa = ptr.pointee
             guard ifa.ifa_addr?.pointee.sa_family == UInt8(AF_LINK) else { continue }
             guard (ifa.ifa_flags & UInt32(IFF_LOOPBACK)) == 0 else { continue }
             guard let data = ifa.ifa_data?.assumingMemoryBound(to: if_data.self) else { continue }
-            total += UInt64(data.pointee.ifi_ibytes) + UInt64(data.pointee.ifi_obytes)
+            out[String(cString: ifa.ifa_name), default: 0] += UInt64(data.pointee.ifi_ibytes) + UInt64(data.pointee.ifi_obytes)
         }
-        return total
+        return out
     }
 }

@@ -20,10 +20,14 @@ mut () {   # label, file under Sources/App, sed expression
   if ! swiftc -O -parse-as-library "$M"/IdleWatcher.swift "$M"/ArmMode.swift "$M"/idlewatcher-selftest.swift -o "$M"/t 2>/dev/null; then
     print -r -- "  caught       $1 — does not compile"; return
   fi
-  local n first
-  n=$("$M"/t | grep -c '  FAIL')
-  first=$("$M"/t | grep -m1 '  FAIL' | sed 's/  FAIL  //; s/  .*//')
+  local n first rc
+  "$M"/t > "$M"/out 2>/dev/null; rc=$?
+  n=$(grep -c '  FAIL' "$M"/out)
+  first=$(grep -m1 '  FAIL' "$M"/out | sed 's/  FAIL  //; s/  .*//')
   if (( n > 0 )); then print -r -- "  caught       $1 — $n check(s), first: $first"
+  # A mutation can also make the selftest die before it prints a verdict — an
+  # arithmetic trap, say. That is caught too, and must not read as "0 failures".
+  elif (( rc != 0 )); then print -r -- "  caught       $1 — the selftest died (exit $rc) after $(grep -c '  PASS' "$M"/out) checks"
   else print -r -- "  SURVIVED     $1"; survived=1; fi
 }
 
@@ -71,6 +75,9 @@ mut "request: every look is a full tick"         IdleWatcher.swift 's/        if
 mut "request: the holder forgotten once named"   IdleWatcher.swift 's/        heldBy = holders?.first/        heldBy = holders?.first ?? heldBy/'
 mut "request: ties behind the CPU it came with"  IdleWatcher.swift 's/case presence, audio, video, request, program, graphics, network/case presence, audio, video, program, request, graphics, network/'
 mut "the status line silent about the holder"    ArmMode.swift     's/if let heldBy { age = "kept on by \\(heldBy)" }/if let heldBy, heldBy.isEmpty { age = "" }/'
+mut "network: a new interface's lifetime counted" IdleWatcher.swift 's/            if let b = before\[name\], n >= b { bytes += n - b }/            bytes += n - (before[name] ?? 0)/'
+mut "network: a counter that went backwards subtracted" IdleWatcher.swift 's/            if let b = before\[name\], n >= b { bytes += n - b }/            if let b = before[name] { bytes += n - b }/'
+mut "network: an interface that left makes it zero" IdleWatcher.swift 's/        for (name, n) in now {$/        for (name, n) in now where before.count == now.count {/'
 mut "Apple .app bundles counted as work"         IdleWatcher.swift 's|static let systemPrefixes = \["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/Library/Apple/"\]|static let systemPrefixes = ["/System/Library/", "/usr/libexec/", "/usr/sbin/", "/sbin/"]|'
 mut "an orphaned job treated as macOS's own"     IdleWatcher.swift 's|static let systemPrefixes = \["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/Library/Apple/"\]|static let systemPrefixes = ["/System/", "/usr/", "/opt/", "/sbin/", "/Library/Apple/"]|'
 mut "a terminal's child judged by its path"      IdleWatcher.swift 's/        if ppid != 1 { return true } .*$/        _ = ppid/'
