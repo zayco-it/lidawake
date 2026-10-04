@@ -32,9 +32,11 @@ enum ArmMode: CaseIterable {
     /// to stay awake, which Claude Code makes for every turn and for nothing in
     /// between (E13a, spec §11.6.5): so it keeps quiet mode on for as long as
     /// its checks are less than the window apart, and a longer wait is what the
-    /// other mode is for. Claude Code is NAMED because it is the one that was
-    /// measured; "AI agents" in general would be a promise nobody checked.
-    /// `quietMinutes` is derived, never typed.
+    /// other mode is for. "Claude Code IN A TERMINAL" is named because that is
+    /// exactly what was measured: run headless (`claude -p`) or from the VS
+    /// Code panel it asks for nothing (E13b, §11.6.6), and "AI agents" in
+    /// general would be a promise nobody checked. `quietMinutes` is derived,
+    /// never typed.
     func toolTip(quietMinutes: Int) -> String {
         switch self {
         case .off:
@@ -46,7 +48,7 @@ enum ArmMode: CaseIterable {
             return "Turns itself off \(quietMinutes) minutes after the last sign of activity: you using the Mac, "
                 + "sound or video playing, one of your programs working hard or asking the Mac to stay awake, "
                 + "the graphics chip, or steady network traffic. "
-                + "An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code does \u{2014} "
+                + "An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code in a terminal does \u{2014} "
                 + "keeps this on, provided it checks in more often than every \(quietMinutes) minutes."
         }
     }

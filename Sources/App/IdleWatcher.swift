@@ -33,9 +33,10 @@
 //
 // AN AGENT IN A LOOP is seen by what it asks for, not by what it uses. Between
 // its checks it uses nothing, and every load signal reads quiet. But Claude
-// Code asks macOS to stay awake for each turn it works — a `caffeinate` child,
-// from the turn's first second until about 30 s after its last (E13a, spec
-// §11.6.5) — and holds nothing while it waits. So a request held by one of the
+// Code, in a terminal, asks macOS to stay awake for each turn it works — a
+// `caffeinate` child, from the turn's first second until about 30 s after its
+// last (E13a, spec §11.6.5) — and holds nothing while it waits. (Headless,
+// `claude -p`, it asks for nothing at all: E13b, §11.6.6.) So a request held by one of the
 // user's programs is a signal (2026-10-04): each check resets the 30 minutes,
 // and a loop that waits less than that stays on. The whole request can be as
 // short as 31 s, which a 30 s tick sees once at best, so the keep-awake list

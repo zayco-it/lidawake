@@ -271,8 +271,8 @@ copied bundle loses its stapled ticket and Gatekeeper rejects it.
 - [ ] **Clicking the checked mode** turns lidawake off, from either.
 - [ ] **Tooltips:** hover each item and read to the end. "Until it goes quiet"
       must say that an AI agent that asks the Mac to stay awake while it works —
-      Claude Code does — keeps it on, provided it checks in more often than
-      every 30 minutes. "Until I turn it off" must say it is for anything that
+      Claude Code in a terminal does — keeps it on, provided it checks in more
+      often than every 30 minutes. "Until I turn it off" must say it is for anything that
       waits longer than 30 minutes between bursts of work. They are the only
       place the app explains the two modes.
 - [ ] **Welcome window** (a fresh account, or §1): once set up it says to click
@@ -593,9 +593,11 @@ and prints `asks: …` only when somebody is asking.
 - [ ] A video in QuickTime → `video QuickTime Player`. A muted video in Firefox
       → `video firefox`.
 - [ ] `caffeinate -i -t 40` in another terminal → `asks: zsh` on every look for
-      40 seconds, and "last: zsh asking the Mac to stay awake". Give Claude Code
-      something to do → `asks: claude` from the first second of the turn until
-      about half a minute after it ends, and nothing while it sits at its prompt.
+      40 seconds, and "last: zsh asking the Mac to stay awake". Give Claude Code,
+      in a terminal, something to do → `asks: claude` from the first second of
+      the turn until about half a minute after it ends, and nothing while it
+      sits at its prompt. The same task through `claude -p` shows nothing at
+      all; as `caffeinate -i claude -p …` it shows for as long as it runs.
 - [ ] `yes > /dev/null` in another terminal for six minutes (2-minute window:
       twenty seconds) → `programs: yes 1.00`, then "last: yes working". Ctrl-C it.
 - [ ] Hands off, nothing running → "WOULD TURN OFF NOW", with a sentence naming
@@ -656,7 +658,9 @@ app's own account of itself.
 
 **Known, and not bugs** (they are named to the user where it matters): an agent
 in a loop that waits longer than 30 minutes between checks is stopped, and so
-is one that never asks the Mac to stay awake (only Claude Code was measured); a
+is one that never asks the Mac to stay awake — which includes Claude Code run
+headless (`claude -p`) or from the VS Code panel; it asks only in a terminal,
+and no other agent was measured (spec §11.6.6); a
 program that holds a keep-awake request and never lets go keeps it on for as
 long as it does, and the status line names it; a muted video in Chrome, Edge, Brave, Arc or Comet is not
 seen (QuickTime, Firefox and Safari are); work under another account or as root

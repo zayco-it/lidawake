@@ -426,7 +426,7 @@ func watch(_ source: Scripted, limit: TimeInterval) -> (at: TimeInterval?, last:
         let tipOff = ArmMode.untilOff.toolTip(quietMinutes: 30), tipQuiet = ArmMode.untilQuiet.toolTip(quietMinutes: 30)
         expect("both tooltips say where an agent in a loop belongs",
                tipOff.contains("Use this for anything that waits longer than 30 minutes between bursts of work.")
-               && tipQuiet.contains("An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code does \u{2014} keeps this on, provided it checks in more often than every 30 minutes."))
+               && tipQuiet.contains("An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code in a terminal does \u{2014} keeps this on, provided it checks in more often than every 30 minutes."))
         expect("…and neither still sends every agent to the other mode", !tipOff.contains("agent") && !tipQuiet.contains("would be stopped"))
         expect("the quiet tooltip names what counts, and derives its minutes",
                ["you using the Mac", "sound or video", "one of your programs working hard or asking the Mac to stay awake", "the graphics chip", "network traffic"].allSatisfy { tipQuiet.contains($0) }

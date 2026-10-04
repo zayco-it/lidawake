@@ -63,7 +63,8 @@ mut "a terminal's child judged by its path"      IdleWatcher.swift 's/        if
 mut "switching modes arms the helper"            ArmMode.swift     's/return ModeTransition(mode: item, helper: .none,/return ModeTransition(mode: item, helper: .arm,/'
 mut "the long-wait sentence dropped from one tooltip" ArmMode.swift 's/Use this for anything that waits longer than/Use this whenever you like, even for longer than/'
 mut "the agent sentence dropped from the other"  ArmMode.swift     's/An AI agent that asks the Mac to stay awake while it works/Something that asks the Mac to stay awake while it works/'
-mut "the quiet tooltip promises every agent"     ArmMode.swift     's/ \\u{2014} Claude Code does \\u{2014} / /'
+mut "the quiet tooltip promises every agent"     ArmMode.swift     's/ \\u{2014} Claude Code in a terminal does \\u{2014} / /'
+mut "the quiet tooltip promises headless too"    ArmMode.swift     's/Claude Code in a terminal does/Claude Code does/'
 
 rm -rf "$M"
 (( survived == 0 )) && print -- "\nevery mutation was caught" || { print -- "\nSOME MUTATIONS SURVIVED OR DID NOT APPLY"; exit 1; }

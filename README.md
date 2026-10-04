@@ -42,8 +42,11 @@ built to be careful:
   video playing, one of your programs working hard or asking the Mac to stay awake, the
   graphics chip, or steady network traffic. What macOS does for itself in the background
   doesn’t count. **An AI agent that asks the Mac to stay awake while it works — Claude Code
-  does — keeps it on, as long as it checks in more often than every 30 minutes**; for
-  anything that waits longer between bursts, use “Keep awake until I turn it off”.
+  in a terminal does — keeps it on, as long as it checks in more often than every 30
+  minutes**; for anything that waits longer between bursts, use “Keep awake until I turn it
+  off”. *Tip for scripts and cron:* run without its terminal interface (`claude -p`), Claude
+  Code doesn’t ask, so lidawake can’t see it. Wrap the run — `caffeinate -i claude -p …` —
+  and it counts for as long as it runs.
 - **Always restores sleep** — on quit, crash, power loss, or if lidawake itself
   freezes while armed. The helper keeps its own watchdog: the app checks in every
   15 seconds, and if check-ins stop for 90 seconds the helper restores normal
