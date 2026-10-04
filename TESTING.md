@@ -122,7 +122,9 @@ lidawake named "network traffic" at all 78 ticks; compile 6½ min, "zsh working"
 chip busy"; off 322 s after the work ended, the notice held while the display slept and delivered on wake. Caveat: the
 Mac was touched during the run's first minute, so the download was alone inside the window only for its last 33 s. The
 network reader changed after this run (below) and was re-checked on the final build against a real download with the
-probe (a 300 KB/s download read as ≈320 KB/s). *The first attempt was void: the driver waited ten minutes for a
+probe (a 300 KB/s download read as ≈320 KB/s) **and then by running the download phase again, alone, on the final
+build: 6½ minutes with the Mac untouched and no agent working, on throughout, "network traffic" named at every tick,
+off 327 s after it ended.** *The first attempt was void: the driver waited ten minutes for a
 screenshot it never saw, lidawake had by then turned itself off — correctly — and the work ran against nothing. The
 driver now turns quiet mode on itself and refuses to go on if that fails.*
 

@@ -82,10 +82,9 @@ download() { curl -s --limit-rate 300k --max-time $1 -o /dev/null "$URL"; sleep 
 compile()  { ( cd $SRC && ./build.sh >/dev/null 2>&1 ) }
 model()    { curl -s --max-time $1 http://127.0.0.1:11434/api/generate -d "{\"model\":\"$MODEL\",\"prompt\":\"Write a very long, detailed technical essay on the history of operating systems. Do not stop early.\",\"stream\":false,\"options\":{\"num_predict\":4000}}" >/dev/null; sleep 1 }
 
-phase download download
-phase compile  compile
-phase model    model
-curl -s http://127.0.0.1:11434/api/generate -d "{\"model\":\"$MODEL\",\"keep_alive\":0}" >/dev/null   # unload it
+# E4_PHASES picks a subset, e.g. "download" alone to re-check one reader after a change.
+for name in ${=E4_PHASES:-download compile model}; do phase $name $name; done
+[[ " ${E4_PHASES:-model} " == *" model "* ]] && curl -s http://127.0.0.1:11434/api/generate -d "{\"model\":\"$MODEL\",\"keep_alive\":0}" >/dev/null   # unload it
 
 echo quiet > $PHASEFILE; say "PHASE quiet begins — nothing running; waiting for lidawake to turn itself off"
 QUIET0=$(date +%s)
