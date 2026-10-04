@@ -100,6 +100,76 @@ release; the rest are good coverage.
 
 ## Results log
 
+**2026-10-04 — 1.6.0 (two ways on — "until it goes quiet" — and one screen switch), tested BEFORE release.**
+M5 Pro, macOS 27.0.1, the signed candidate installed over the shared copy; the helper (2.2.0, untouched by this
+release) kept one pid all day. **The candidate changed three times during the pass, each time for something the
+pass found** — what ran on which build is said below. Final build: `9ec838c`. Logs: `/Users/Shared/lidawake-research/hw-*`.
+
+*Selftests, final build:* idlewatcher **180 checks**, **43 mutations each caught**; settings 42, wakeassertion 15,
+lidwarning 50, power 19, license 11, wakesummary 13, ui 25 — all pass.
+
+*Desk checks on the real menu (items clicked by name through Accessibility; lid shut on the Dell)* — **PASS**:
+§8 after-update state (bundle swapped under a running helper: normal menu, no setup prompt, live toggle); §2 both
+modes arm, checkmark and status line follow; **switching modes while on: `SleepDisabled` sampled every 0.2 s across
+each click never left 1, no window opened**; the checked item turns it off from either mode; §7 quit and force-kill
+while on, both modes → 0 (force-kill in about 0.6 s); status line "(kept on by claude)"; §5 migration spot check
+(`keepAwakeLidOpen=false, keepScreenOnLidOpen=true` → screen switch off, old key gone); §9 one screen switch; §10 About
+"1.6.0 (30)". Owner's eyes: both tooltips complete, icon blue / green / plain. *(Build `9d2b53d`; the quick regression
+was repeated on the final build.)*
+
+*E4, work holds it — 5-minute window, lid shut on the Dell, AC* — **PASS** *(build `b0f19d4`)*: download 6½ min,
+lidawake named "network traffic" at all 78 ticks; compile 6½ min, "zsh working"; local model 6½ min, "the graphics
+chip busy"; off 322 s after the work ended, the notice held while the display slept and delivered on wake. Caveat: the
+Mac was touched during the run's first minute, so the download was alone inside the window only for its last 33 s. The
+network reader changed after this run (below) and was re-checked on the final build against a real download with the
+probe (a 300 KB/s download read as ≈320 KB/s). *The first attempt was void: the driver waited ten minutes for a
+screenshot it never saw, lidawake had by then turned itself off — correctly — and the work ran against nothing. The
+driver now turns quiet mode on itself and refuses to go on if that fails.*
+
+*T2.12 in clamshell* — **PASS**: with lidawake on and "Keep the screen on" on, lid shut on the Dell on AC, the monitor
+slept on its 10-minute timer (13:24:34, and 17:27:31 in the long run) and lidawake held no screen lock in any sample;
+the lock was there with the lid open, gone within seconds of closing it, back on opening.
+
+*Hands-on session, 2-minute window* — **PASS** *(build `b0f19d4`)*: lid-open stop (E9c); **typing with the lid shut on
+the Dell for 3 minutes stayed on, off 2 minutes after the last key (E2)**; unplug guard in green and in blue (off
+within one 2-second sample of going to battery); refusal on battery with battery use off; **no monitor, on battery,
+lid shut (E9b): off at the window, and the power log shows the Mac entering sleep 7 s later.** E2 ran on AC: this
+Mac's power arrives through the Dell's cable, so "on battery with a monitor" is not a configuration this rig has.
+Other account: with the owner's copy on there and an agent working here, its status line ended "(kept on by a program
+in another account)".
+
+*Found by the pass, and fixed:* (1) the Settings window's fixed height left a gap under the last section → it now
+takes its height from its content (`b0f19d4`); (2) **the lid warning's own sound was read as "sound playing" and named
+in the notice** → ignored for its length plus 8 s (`0201c8a`), retested: no longer named; (3) **pulling a cable that
+carries the network made the notice say "a moment when the network could not be checked"** → bytes are counted per
+interface (`9ec838c`), retested with a 10-minute window: the wording is gone and the notice carries "Awake 10 min";
+(4) the mutation script scored a source that did not compile as "every mutation caught" → it refuses to run on one.
+
+*Known, accepted by the product owner:* in the first three samples after turning on, two busy network samples out of
+three read as "steady". The undock retest named "network traffic" — real traffic, everything reconnecting over Wi-Fi —
+and stopped 30 s late. At the real window that needs about 1 MB in each of two half-minute samples and costs at most
+90 s; the candidate fix (count the samples from before the watch started as zero) is not in 1.6.0.
+
+*E13 and E9a at the REAL 30-minute window* — **PASS** *(final build `9ec838c`)*: lid shut on the Dell, AC, the agent's
+`Stop`-hook sound off, a fresh Claude Code session running `/loop 6m`, seven checks from 17:16:34 to 17:48:34.
+**On throughout. Every check's request was seen at 3 to 5 of the 10-second looks — never fewer than three.** Between
+checks nothing else was ever the last activity (network at or over 30 KB/s in 5 of 59 ticks, never sustained). **Off
+at 18:19:19, thirty minutes after the last sighting of the last request.** Notice: "Nothing had been happening for 30
+minutes. The last thing it saw was claude asking the Mac to stay awake, at 17:48. Awake 1 h 2 min · stayed cool."
+
+*Seen in passing:* with nothing at all holding an assertion — display asleep, lidawake off — the probe shows `??`:
+macOS answers an empty table the way it answers an unreachable one. The app holds an assertion of its own whenever it
+is on, so it cannot meet that case.
+
+**NOT run, and why:** §7 thermal (cannot be forced; code unchanged). Battery floor on hardware (charge was 100 % and
+the floor stops at 90; `power-selftest` 19/19, and the arming gate itself was exercised by the battery-off refusal).
+The battery refusal in blue (same gate). Video on hardware (selftest fixtures from E10; the reader is the one sound
+and requests use). §1 first run and the Welcome window's wording, §8 self-heal / "Try Again" / Uninstall (never run on
+this machine — the helper is shared with the other account), the §11 lid-warning matrix (the warning sounded twice in
+passing, volume raised and restored; its only change is telling the detector it is about to sound). §3's heartbeat
+file: continuity is shown instead by `SleepDisabled` staying 1 through a lid-shut hour. **Post-release:** a real
+Sparkle update 1.5.0 → 1.6.0 in the owner's own copy.
+
 **2026-07-04 — 1.1.0 (paid licensing: 14-day trial → Freemius license key, grandfather 1.0.x), tested BEFORE
 release.** Licensing is app-side + signing-independent, so most was verified on the UNSIGNED dev build (forced
 states via `defaults` + env hooks) plus a real SANDBOX purchase: **live activation PROVEN** — real key → `FreemiusProvider.activate`
