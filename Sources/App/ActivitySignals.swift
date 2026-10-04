@@ -30,7 +30,12 @@
 //              not which host, not which process.
 //
 // Nothing is stored between ticks but the counters needed to take a
-// difference, nothing is written to disk, and nothing leaves the Mac.
+// difference, and no history is kept. ONE thing is written down, once: the
+// last activity seen, at the moment quiet mode turns lidawake off — in the
+// notice (Notification Center, and the menu line, which sits in the app's
+// preferences until the user dismisses it) and in a single NSLog line in the
+// system log. Under the test hook there is such a line per tick; a shipped
+// build never sets it. Nothing leaves the Mac.
 //
 // EVERY READER RETURNS nil WHEN IT CANNOT READ, never a zero. The policy
 // counts nil as activity: stopping someone's work is worse than running

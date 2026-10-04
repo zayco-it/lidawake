@@ -549,7 +549,8 @@ open it again within the 30 s.
 > programs asking the Mac to stay awake (`caffeinate`, or the same request made
 > directly), one of your programs at half a core or more, the graphics chip
 > over 50 %, or network traffic over 30 KB/s — the last three as a five-minute
-> median, so a spike is not work. macOS's own processes never count. Everything
+> median, so a spike is not work. macOS's own processes never count as programs
+> (their use of the graphics chip can — see "Known" below). Everything
 > is read every 30 s; the keep-awake list every 10 s, because an agent's request
 > for a short turn lasts barely half a minute. A program in **another user's
 > account** that asks counts too, and is never named: it is "a program in

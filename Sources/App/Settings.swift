@@ -76,7 +76,12 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 400, height: 430)
+        // The height is the content's own, not a constant. A fixed 430 clipped
+        // the last line once (a row was added) and left a gap under it later (a
+        // row was removed), each time silently. The window follows — see
+        // `sizingOptions` below — so it also fits with the battery rows hidden.
+        .frame(width: 400)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -87,6 +92,8 @@ final class SettingsWindowController {
     func show() {
         if window == nil {
             let host = NSHostingController(rootView: SettingsView())
+            // The window tracks the form's size, as the Preparing window does.
+            host.sizingOptions = [.preferredContentSize]
             let w = NSWindow(contentViewController: host)
             w.title = "lidawake Settings"
             w.styleMask = [.titled, .closable]

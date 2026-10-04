@@ -47,7 +47,7 @@ enum ArmMode: CaseIterable {
         case .untilQuiet:
             return "Turns itself off \(quietMinutes) minutes after the last sign of activity: you using the Mac, "
                 + "sound or video playing, one of your programs working hard or asking the Mac to stay awake, "
-                + "the graphics chip, or steady network traffic. "
+                + "the graphics chip working, or steady network traffic. "
                 + "An AI agent that asks the Mac to stay awake while it works \u{2014} Claude Code in a terminal does \u{2014} "
                 + "keeps this on, provided it checks in more often than every \(quietMinutes) minutes."
         }

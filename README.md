@@ -40,8 +40,8 @@ built to be careful:
 - **Can turn itself off when things go quiet** — choose “Keep awake until it goes quiet” and
   it lets your Mac sleep 30 minutes after the last sign of activity: you using it, sound or
   video playing, one of your programs working hard or asking the Mac to stay awake, the
-  graphics chip, or steady network traffic. What macOS does for itself in the background
-  doesn’t count. **An AI agent that asks the Mac to stay awake while it works — Claude Code
+  graphics chip working, or steady network traffic. Most of what macOS does for itself in the
+  background doesn’t count. **An AI agent that asks the Mac to stay awake while it works — Claude Code
   in a terminal does — keeps it on, as long as it checks in more often than every 30
   minutes**; for anything that waits longer between bursts, use “Keep awake until I turn it
   off”. *Tip for scripts and cron:* run without its terminal interface (`claude -p`), Claude
