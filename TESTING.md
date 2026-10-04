@@ -169,8 +169,15 @@ The battery refusal in blue (same gate). Video on hardware (selftest fixtures fr
 and requests use). §1 first run and the Welcome window's wording, §8 self-heal / "Try Again" / Uninstall (never run on
 this machine — the helper is shared with the other account), the §11 lid-warning matrix (the warning sounded twice in
 passing, volume raised and restored; its only change is telling the detector it is about to sound). §3's heartbeat
-file: continuity is shown instead by `SleepDisabled` staying 1 through a lid-shut hour. **Post-release:** a real
-Sparkle update 1.5.0 → 1.6.0 in the owner's own copy.
+file: continuity is shown instead by `SleepDisabled` staying 1 through a lid-shut hour.
+
+**Post-release, done 2026-10-04.** A real Sparkle update in the owner's own copy, through Check for Updates,
+1.5.0 → 1.6.0: two "Keep awake…" items in the menu, About "1.6.0 (30)", one "Keep the screen on" switch in Settings.
+Release post-flight from live sources: GitHub's latest release is `v1.6.0` and the tag is `main`; the DMG from GitHub
+and the one zayco.it serves both match the published SHA-256, and Apple's check accepts DMG and app as "Notarized
+Developer ID"; the product page advertises 1.6.0 with the new copy and screenshot; the appcast names 1.6.0 (30) and the
+GitHub zip at its exact length; **the zip verifies against the appcast's signature with the public key inside the
+installed 1.5.0, and fails with one bit of the signature or one byte of the zip changed**; the Homebrew cask is in step.
 
 **2026-07-04 — 1.1.0 (paid licensing: 14-day trial → Freemius license key, grandfather 1.0.x), tested BEFORE
 release.** Licensing is app-side + signing-independent, so most was verified on the UNSIGNED dev build (forced
