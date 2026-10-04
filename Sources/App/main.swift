@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let notifier       = Notifier()
     private lazy var lidWarning = LidWarning(notifier: notifier)
     private var wakeSummary    = WakeSummary()
-    private let idleWatcher    = IdleWatcher()
+    private let idleWatcher    = IdleWatcher(source: SystemActivitySource())
     private let settingsWindow = SettingsWindowController()
     private let onboardingWindow = OnboardingWindowController()
     private let license = LicenseController(provider: LicenseConfig.makeProvider())
@@ -352,6 +352,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         untilQuietItem = NSMenuItem(title: ArmMode.untilQuiet.menuTitle, action: #selector(chooseUntilQuiet), keyEquivalent: "")
         untilQuietItem.target = self
         menu.addItem(untilQuietItem)
+        // The tooltips are the only place the app explains the two modes, and both
+        // say where an agent running in a loop belongs (ArmMode.toolTip).
+        let quietMinutes = max(1, Int(IdleWatcher.window / 60))
+        untilOffItem.toolTip = ArmMode.untilOff.toolTip(quietMinutes: quietMinutes)
+        untilQuietItem.toolTip = ArmMode.untilQuiet.toolTip(quietMinutes: quietMinutes)
 
         statusLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         statusLineItem.isEnabled = false

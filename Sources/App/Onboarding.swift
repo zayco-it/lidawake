@@ -48,7 +48,10 @@ struct OnboardingView: View {
             if enabled {
                 Label("You're all set", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.headline)
-                Text("Click the laptop in your menu bar, then \u{201C}Keep my Mac awake.\u{201D}")
+                // Names the first of the two menu items (ArmMode.untilOff.menuTitle)
+                // — what lidawake has always done, and the one that never stops
+                // anyone's work by itself. Keep the two in step.
+                Text("Click the laptop in your menu bar, then \u{201C}Keep awake until I turn it off.\u{201D}")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {

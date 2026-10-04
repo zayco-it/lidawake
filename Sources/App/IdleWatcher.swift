@@ -6,43 +6,46 @@
 // 30 s. Nothing learns, nothing adapts, every number is fixed, and the message
 // that turns lidawake off names the last thing seen and when.
 //
-// Two kinds of signal:
+// Six signals, of two kinds:
 //   declared — input age, sound, video: read as they are, instantaneous.
-//   load     — a program's CPU, the processor, the graphics chip, the network:
-//              bursty, so each is the MEDIAN of the trailing ten samples (five
-//              minutes) against a fixed threshold. The median's only job is
-//              spike immunity; the 30-minute rule is the debounce, so the
-//              window is short on purpose — a long one keeps reading "active"
-//              for most of half an hour after a download ends, and only then
-//              do the 30 minutes start, which nobody can predict from "30
-//              minutes of quiet".
+//   load     — a program's CPU, the graphics chip, the network: bursty, so each
+//              is the MEDIAN of the trailing ten samples (five minutes) against
+//              a fixed threshold. The median's only job is spike immunity; the
+//              30-minute rule is the debounce, so the window is short on
+//              purpose — a long one keeps reading "active" for most of half an
+//              hour after a download ends, and only then do the 30 minutes
+//              start, which nobody can predict from "30 minutes of quiet".
 //
 // A SIGNAL THAT CANNOT BE READ COUNTS AS ACTIVITY NOW. Each reader returns an
 // optional; nil means "could not read", never "nothing". Stopping someone's
 // work is worse than running longer, and this is testable without hardware.
 //
-// THRESHOLDS ARE PLACEHOLDERS until E10 and E11 (spec §11.6) have run on
-// macOS 27 — see `Thresholds`. The selftest passes its own, so nothing there
-// depends on them.
+// THERE IS NO SYSTEM-WIDE CPU SIGNAL, and that is the history of this file.
+// T2.5's detector counted system-wide CPU and network on a 30-minute mean and
+// was stopped in 1.4.9: in the target configuration it read BUSY permanently
+// (spec §7.20). A system-wide total cannot tell the user's work from macOS's
+// housekeeping (§7.21) — on an idle night `mediaanalysisd` alone ran at two
+// cores for 79 % of the samples (E11, §11.6.4). The rebuild kept one
+// system-wide number as a backstop at 4 cores; the same night it read "busy"
+// for an hour and a half, and it was dropped (2026-10-04). CPU is counted per
+// process, for the user's own programs only — see `WorkRule`.
 //
-// READERS ARE STUBBED. `StubActivitySource` reads nothing, so every signal is
-// unreadable, quiet mode never fires, and the menu shows "(active now)". The
-// real readers are spec §11.8 step 3 (`ActivitySignals.swift`), after the
-// measurements. Until then the mode is plumbing, and safe plumbing.
+// What this deliberately does not see is spec §11.4. The one that matters most
+// to the people who use lidawake: AN AGENT RUNNING IN A LOOP looks quiet
+// between its checks and is stopped after 30 minutes. That is what "Keep awake
+// until I turn it off" is for, and the menu says so (ArmMode.swift).
 //
-// What was here before — T2.5's two counters, system-wide CPU and network on a
-// 30-minute mean — was stopped in 1.4.9: measured in the target configuration
-// it read BUSY permanently (spec §7.20), because a system-wide total cannot
-// tell the user's work from macOS's housekeeping (§7.21). The per-program
-// signal below exists to fix exactly that, by attributing CPU to processes.
+// This file has no system calls in it: the policy, the two classification
+// rules and the sentences, all testable without a machine. The readers are in
+// ActivitySignals.swift.
 
 import Foundation
 
-/// The seven things the detector can see. The order is the tie-break when two
+/// The six things the detector can see. The order is the tie-break when two
 /// signals share the same last moment — presence first, so "you using the Mac"
-/// is what gets named when it and "the processor busy" are both now.
+/// is what gets named when it and "network traffic" are both now.
 enum Signal: Int, CaseIterable, Comparable {
-    case presence, audio, video, program, processor, graphics, network
+    case presence, audio, video, program, graphics, network
     static func < (a: Signal, b: Signal) -> Bool { a.rawValue < b.rawValue }
 }
 
@@ -50,8 +53,8 @@ enum Signal: Int, CaseIterable, Comparable {
 struct Activity: Equatable {
     let signal: Signal
     let at: Date
-    /// The process name, for video and program — the part of the sentence that
-    /// names something. Nil for the rest.
+    /// The app or process name, for video and program — the part of the
+    /// sentence that names something. Nil for the rest.
     let detail: String?
     /// False when the signal counted because it could NOT be read. Such an
     /// activity is always "now", so it never reaches the stop message; it shows
@@ -70,59 +73,70 @@ struct Activity: Equatable {
     var description: String {
         guard readable else { return "\(subject) could not be checked" }
         switch signal {
-        case .presence:  return "you using the Mac"
-        case .audio:     return "sound playing"
-        case .video:     return detail.map { "video playing in \($0)" } ?? "video playing"
-        case .program:   return detail.map { "\($0) working" } ?? "one of your programs working"
-        case .processor: return "the processor busy"
-        case .graphics:  return "the graphics chip busy"
-        case .network:   return "network traffic"
+        case .presence: return "you using the Mac"
+        case .audio:    return "sound playing"
+        case .video:    return detail.map { "video playing in \($0)" } ?? "video playing"
+        case .program:  return detail.map { "\($0) working" } ?? "one of your programs working"
+        case .graphics: return "the graphics chip busy"
+        case .network:  return "network traffic"
         }
     }
 
     private var subject: String {
         switch signal {
-        case .presence:  return "input"
-        case .audio:     return "sound"
-        case .video:     return "video"
-        case .program:   return "your programs"
-        case .processor: return "the processor"
-        case .graphics:  return "the graphics chip"
-        case .network:   return "the network"
+        case .presence: return "input"
+        case .audio:    return "sound"
+        case .video:    return "video"
+        case .program:  return "your programs"
+        case .graphics: return "the graphics chip"
+        case .network:  return "the network"
         }
     }
+}
+
+/// One of the user's processes. The name is the one the message uses — the
+/// app's, not the helper's (see `WorkRule.displayName`) — so two helpers of one
+/// app are two programs with one name, each with its own median.
+struct Program: Hashable {
+    let name: String
+    let pid: Int32
 }
 
 /// One tick's readings. EVERY field is optional, and nil means the reader
 /// could not read — which the policy counts as activity now. A reader that can
 /// read and sees nothing returns a value: false, [], [:], 0.
 struct Readings {
-    var presenceAge: TimeInterval? = nil        // seconds since the last input event
-    var audioHeld: Bool? = nil                  // coreaudiod holds its assertion
-    var videoHolders: [String]? = nil           // names holding PreventUserIdleDisplaySleep, lidawake excluded
-    var programCores: [String: Double]? = nil   // this tick's core-equivalents per WORK process, by name
-    var totalCores: Double? = nil               // system-wide core-equivalents
-    var gpuPercent: Double? = nil               // IOAccelerator Device Utilization %
-    var networkKBps: Double? = nil              // non-loopback bytes, both directions
+    var presenceAge: TimeInterval? = nil         // seconds since the last hardware input event
+    var audioHeld: Bool? = nil                   // coreaudiod holds its assertion
+    var videoHolders: [String]? = nil            // names holding a display-sleep assertion, lidawake excluded
+    var programCores: [Program: Double]? = nil   // this tick's core-equivalents per WORK process
+    var gpuPercent: Double? = nil                // IOAccelerator Device Utilization %
+    var networkKBps: Double? = nil               // non-loopback bytes, both directions
     init() {}
 }
 
-/// Every number the rule uses, in one place.
-///
-/// PLACEHOLDERS: `programCores` is set from E11 and `gpuPercent` from E10
-/// phase E before release (spec §11.6); the values here are the provisional
-/// ones from spec §11.3 and nothing in the selftest depends on them.
-/// `processorCores` and `networkKBps` are decided; `quietWindow` is the product
-/// rule itself.
+/// Every number the rule uses, in one place. All measured on macOS 27.0.1
+/// (spec §11.6); none is a guess, and the selftest passes its own.
 struct Thresholds {
+    /// The product rule itself. Not a setting.
     var quietWindow: TimeInterval = 30 * 60
-    var medianSamples = 10        // five minutes at the 30 s tick
-    var minimumSamples = 3        // a "median" of one or two samples is a spike with a majority
-    var programCores = 0.5        // PLACEHOLDER — E11
-    var processorCores = 4.0      // the backstop for what attribution cannot read
-    var gpuPercent = 50.0         // PLACEHOLDER — E10 phase E (the load side is measured: 98 % under inference, E5c)
-    var networkKBps = 15.0
-    static let placeholder = Thresholds()
+    /// Five minutes at the 30 s tick.
+    var medianSamples = 10
+    /// A "median" of one or two samples is a spike with a majority.
+    var minimumSamples = 3
+    /// One of your programs at half a core, sustained. E11: across an idle
+    /// night the highest five-minute median of any third-party process was
+    /// 0.24; a single busy thread is 1.0. Twice the margin on both sides.
+    var programCores = 0.5
+    /// E5c: 98 % under local inference. E10: at most 39 % with a monitor lit,
+    /// 0 with it asleep, 12 with no display at all. One contaminant is known
+    /// and accepted — macOS's media analysis uses the GPU (§11.4).
+    var gpuPercent = 50.0
+    /// E11: an idle night's five-minute median peaked at 18.2 KB/s on
+    /// background sync; 15, the old number, was crossed three times.
+    var networkKBps = 30.0
+
+    static let measured = Thresholds()
 }
 
 /// The trailing median of one load signal. Spike-immune by construction: of ten
@@ -163,16 +177,14 @@ struct QuietPolicy {
     /// detector is itself activity — the user just clicked.
     private(set) var last: [Signal: Activity] = [:]
 
-    private var processor: MedianWindow
     private var graphics: MedianWindow
     private var network: MedianWindow
-    private var programs: [String: MedianWindow] = [:]
+    private var programs: [Program: MedianWindow] = [:]
 
     init(thresholds: Thresholds, start: Date) {
         self.thresholds = thresholds
-        processor = MedianWindow(capacity: thresholds.medianSamples)
-        graphics  = MedianWindow(capacity: thresholds.medianSamples)
-        network   = MedianWindow(capacity: thresholds.medianSamples)
+        graphics = MedianWindow(capacity: thresholds.medianSamples)
+        network  = MedianWindow(capacity: thresholds.medianSamples)
         last[.presence] = Activity(.presence, at: start)
     }
 
@@ -187,17 +199,17 @@ struct QuietPolicy {
         if let holders = r.videoHolders { if let h = holders.first { note(Activity(.video, at: now, detail: h)) } }
         else { note(.unreadable(.video, at: now)) }
 
-        // Your programs: one median per process, by name. A process that was
-        // seen before and is absent this tick reads as 0, so it decays; a window
-        // that has filled with zeros is forgotten.
+        // Your programs: one median per process. A process that was seen before
+        // and is absent this tick reads as 0, so it decays; a window that has
+        // filled with zeros is forgotten.
         if let cores = r.programCores {
-            for (name, c) in cores {
-                programs[name, default: MedianWindow(capacity: thresholds.medianSamples)].add(c)
+            for (program, c) in cores {
+                programs[program, default: MedianWindow(capacity: thresholds.medianSamples)].add(c)
             }
-            for name in programs.keys where cores[name] == nil { programs[name]?.add(0) }
+            for program in programs.keys where cores[program] == nil { programs[program]?.add(0) }
             var busiest: (name: String, median: Double)? = nil
-            for (name, w) in programs where w.sustained(over: thresholds.programCores, minimum: thresholds.minimumSamples) {
-                if let m = w.median, busiest == nil || m > busiest!.median { busiest = (name, m) }
+            for (program, w) in programs where w.sustained(over: thresholds.programCores, minimum: thresholds.minimumSamples) {
+                if let m = w.median, busiest == nil || m > busiest!.median { busiest = (program.name, m) }
             }
             if let busiest { note(Activity(.program, at: now, detail: busiest.name)) }
             programs = programs.filter { !($0.value.isFull && $0.value.allZero) }
@@ -205,11 +217,10 @@ struct QuietPolicy {
             note(.unreadable(.program, at: now))
         }
 
-        // The three system-wide load signals.
+        // The two system-wide load signals.
         var a: Activity?
-        (processor, a) = load(processor, r.totalCores,  .processor, thresholds.processorCores, now); if let a { note(a) }
-        (graphics,  a) = load(graphics,  r.gpuPercent,  .graphics,  thresholds.gpuPercent,     now); if let a { note(a) }
-        (network,   a) = load(network,   r.networkKBps, .network,   thresholds.networkKBps,    now); if let a { note(a) }
+        (graphics, a) = load(graphics, r.gpuPercent,  .graphics, thresholds.gpuPercent,  now); if let a { note(a) }
+        (network,  a) = load(network,  r.networkKBps, .network,  thresholds.networkKBps, now); if let a { note(a) }
     }
 
     /// One load signal's step: the window with this sample added, and the
@@ -241,15 +252,108 @@ struct QuietPolicy {
     func shouldStop(at now: Date) -> Bool { quietAge(at: now) >= thresholds.quietWindow }
 }
 
-/// Where a tick's readings come from. The real readers arrive with spec §11.8
-/// step 3; until then the stub below is the only source.
-protocol ActivitySource {
+// MARK: - The two classification rules
+
+/// One row of the power-assertion table, reduced to what the rules read.
+/// `trueType` is `AssertionTrueType`, NOT `AssertType`: the declared type is
+/// whatever name the holder created the assertion under, and browsers create
+/// their video lock under the legacy `NoDisplaySleepAssertion`. Matching the
+/// declared type scored Firefox 0 of 9 while it held its lock 9 of 9 (E10).
+struct AssertionRow {
+    let pid: Int32
+    let process: String
+    let trueType: String
+    let name: String
+}
+
+/// Sound and video, as other software declares them (spec §11.3, §11.3.1).
+enum AssertionRule {
+    static let systemSleep  = "PreventUserIdleSystemSleep"
+    static let displaySleep = "PreventUserIdleDisplaySleep"
+    /// How WakeAssertionManager names both of ours.
+    static let ownPrefix = "it.zayco.lidawake"
+
+    /// Sound: `coreaudiod`, and only `coreaudiod`, holding a system-sleep
+    /// assertion. It takes one for an open output device whatever the app and
+    /// whatever the device — speakers, a monitor, AirPods, AirPlay (E10) — and
+    /// lets go within seconds of a pause. Matching the HOLDER excludes every
+    /// other holder of that type in one test: powerd, bluetoothd, caffeinate,
+    /// a player's own, and lidawake's. That type is far too busy to read any
+    /// other way — in half an hour with nothing playing, seven different
+    /// daemons held it (E10).
+    static func audioHeld(_ rows: [AssertionRow]) -> Bool {
+        rows.contains { $0.process == "coreaudiod" && $0.trueType == systemSleep }
+    }
+
+    /// Video: a display-sleep assertion from anything that is not lidawake.
+    /// Own pid is NOT enough — a second account can run its own lidawake, which
+    /// holds exactly this type while its screen switch is on (measured, two
+    /// accounts on one Mac) — so ours are excluded by name and by process too.
+    /// powerd's `delayDisplayOff` has a true type of its own and never matches.
+    static func videoHolders(_ rows: [AssertionRow], ownPid: Int32) -> [String] {
+        var seen = Set<String>(), out: [String] = []
+        for r in rows where r.trueType == displaySleep
+            && r.pid != ownPid && r.process != "lidawake" && !r.name.hasPrefix(ownPrefix) {
+            if seen.insert(r.process).inserted { out.append(r.process) }
+        }
+        return out
+    }
+}
+
+/// Whose CPU is it? (spec §11.3.2)
+///
+/// A process is the user's WORK unless it is one of macOS's own: started by
+/// launchd from a system location. That one test separates `mediaanalysisd`,
+/// Spotlight, iCloud sync and the rest — two cores for most of an idle night —
+/// from anything the user opened or started, without a list of names.
+///
+/// Stated as what is excluded, deliberately. The first wording included "inside
+/// a .app, or not started by launchd", and two things in it were wrong: Apple
+/// ships background agents AS .app bundles (`Siri AI` held half a core and was
+/// named as the user's work), and a job left running with `nohup` is
+/// re-parented to launchd the moment its terminal closes, so it matched
+/// neither test and would have been slept.
+enum WorkRule {
+    /// Where macOS keeps its own. `/usr/bin` and `/bin` are NOT here: those are
+    /// tools people run (python3, rsync, a shell), not agents.
+    static let systemPrefixes = ["/System/", "/usr/libexec/", "/usr/sbin/", "/sbin/", "/Library/Apple/"]
+
+    static func isWork(path: String, ppid: Int32) -> Bool {
+        if ppid != 1 { return true }          // something other than launchd started it
+        return !systemPrefixes.contains { path.hasPrefix($0) }
+    }
+
+    /// The name the message uses: the outermost `.app` the executable lives in
+    /// — "Firefox", not "Firefox GPU Helper" — and otherwise the process's own
+    /// name. Unless that name is a version number: Claude Code runs from
+    /// `…/claude/versions/2.1.286` and is called exactly that by the system
+    /// (measured), and "2.1.286 working" tells nobody anything. Then it is the
+    /// nearest folder above with a real name — "claude".
+    static func displayName(path: String, processName: String = "") -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        if let app = parts.first(where: { $0.hasSuffix(".app") }) { return String(app.dropLast(4)) }
+        let leaf = processName.isEmpty ? (parts.last ?? path) : processName
+        if leaf.contains(where: \.isLetter) { return leaf }
+        let generic: Set<String> = ["versions", "version", "releases", "current", "bin"]
+        let named = parts.dropLast().reversed().first { $0.contains(where: \.isLetter) && !generic.contains($0.lowercased()) }
+        return named ?? leaf
+    }
+}
+
+// MARK: - Sources and sentences
+
+/// Where a tick's readings come from. The real one is `SystemActivitySource`
+/// (ActivitySignals.swift); the stub is what the policy runs on in tests.
+protocol ActivitySource: AnyObject {
+    /// Take the baselines the load signals measure against. Called at start.
+    func prime()
     func read() -> Readings
 }
 
-/// Reads nothing: every signal unreadable, so quiet mode can never fire. The
-/// safe intermediate state while the readers wait on E10 and E11.
-struct StubActivitySource: ActivitySource {
+/// Reads nothing: every signal unreadable, so the policy can never stop.
+final class StubActivitySource: ActivitySource {
+    init() {}
+    func prime() {}
     func read() -> Readings { Readings() }
 }
 
@@ -302,11 +406,11 @@ final class IdleWatcher {
     static var sampleInterval: TimeInterval { interval(for: window) }
     static func interval(for window: TimeInterval) -> TimeInterval { max(1, window / 60) }
 
-    /// The placeholders with the window applied. Only the window scales; the
-    /// median stays ten ticks, so under the hook it is ten shortened ticks.
+    /// The measured thresholds with the window applied. Only the window scales;
+    /// the median stays ten ticks, so under the hook it is ten shortened ticks.
     static var thresholds: Thresholds { thresholds(for: window) }
     static func thresholds(for window: TimeInterval) -> Thresholds {
-        var t = Thresholds.placeholder
+        var t = Thresholds.measured
         t.quietWindow = window
         return t
     }
@@ -328,6 +432,7 @@ final class IdleWatcher {
 
     func start() {
         guard timer == nil else { return }
+        source.prime()
         policy = QuietPolicy(thresholds: Self.thresholds, start: Date())
         fired = false
         NSLog("[lidawake] quiet watch started — window \(Int(Self.window))s, sampling every \(Int(Self.sampleInterval))s")

@@ -199,13 +199,13 @@ open build/lidawake.app
 Start from a clean state (use **Uninstall lidawake…**, or a machine that never
 had it). Relaunch the app.
 
-- [ ] Menu shows **Finish setup…**, and **Keep my Mac awake** is greyed out.
+- [ ] Menu shows **Finish setup…**, and **Keep awake until I turn it off** is greyed out.
 - [ ] Status line reads "Finish the one-time setup to begin".
-- [ ] Click **Finish setup…** (or **Keep my Mac awake**) → System Settings opens
+- [ ] Click **Finish setup…** (or **Keep awake until I turn it off**) → System Settings opens
       to Login Items.
 - [ ] Approve lidawake under **Allow in the Background** (admin prompt on this
       Standard account is expected).
-- [ ] Reopen the menu → **Keep my Mac awake** is now enabled, **Finish setup…**
+- [ ] Reopen the menu → **Keep awake until I turn it off** is now enabled, **Finish setup…**
       is gone.
 
 ### The launch probe (added 1.4.5) — MUST be run on hardware
@@ -228,7 +228,7 @@ that delay could cost. **Reasoning about them is not enough — watch the screen
 - [ ] The glyph must not blink or change during launch — `updateIcon()` reads only
       `armed`, so this is a regression check, not an expected behaviour.
 - [ ] Approve in Login Items during onboarding, click **I've turned it on** →
-      **Get Started**, then open the menu: **Keep my Mac awake** is live and
+      **Get Started**, then open the menu: **Keep awake until I turn it off** is live and
       **Finish setup…** is gone, *before* the helper has ever answered.
 
 ### Install location & duplicate copies (added 1.4.3)
@@ -253,24 +253,32 @@ copied bundle loses its stapled ticket and Gatekeeper rejects it.
 
 ## 2. Menu-bar glyph & menu state
 
-- [ ] **Off:** monochrome laptop glyph; menu item unchecked; status "Off — your
+- [ ] **Off:** monochrome laptop glyph; neither item checked; status "Off — your
       Mac will sleep normally".
-- [ ] **On:** laptop glyph turns **blue**; menu item shows a checkmark; status
-      "On — you can close the lid".
+- [ ] **Keep awake until I turn it off:** glyph turns **blue**; that item is
+      checked; status "On — you can close the lid".
+- [ ] **Keep awake until it goes quiet:** glyph turns **green**; that item is
+      checked; status "On — stops after 30 min of quiet (active now)". Leave the
+      Mac alone and reopen the menu: the part in brackets becomes "(quiet for
+      N min)" and N grows.
+- [ ] **Switching while on:** with one mode checked, click the other → the
+      checkmark and the colour move, `pmset -g | grep SleepDisabled` reads `1`
+      before, during and after, and no window, alert or notification appears.
+- [ ] **Clicking the checked mode** turns lidawake off, from either.
+- [ ] **Tooltips:** hover each item and read to the end. Both must say, in
+      words, that an AI agent running in a loop belongs in "Keep awake until I
+      turn it off". They are the only place the app explains the two modes.
+- [ ] **Welcome window** (a fresh account, or §1): once set up it says to click
+      "Keep awake until I turn it off" — the name of an item that exists.
 
-> **Not tested here: the idle auto-off.** As of 1.4.9 `IdleWatcher` is not
-> started, so nothing auto-disarms on inactivity. It was never in this plan, which
-> is consistent with it never having been exercised — and when it was finally
-> measured (2026-09-06) it read BUSY for a whole 30-minute window in the target
-> configuration, so it could not have fired. Restore this section when it is
-> rebuilt.
+The detector behind the second item is §12.
 
 ## 3. Core — keep awake with the lid closed (the whole point)
 
 On **AC power**, no external display:
 
 - [ ] Start the heartbeat loop (see commands).
-- [ ] Menu → **Keep my Mac awake** (glyph blue). `pmset -g` shows
+- [ ] Menu → **Keep awake until I turn it off** (glyph blue). `pmset -g` shows
       `SleepDisabled 1`.
 - [ ] Close the lid for ~2 minutes, then reopen.
 - [ ] `tail /tmp/awake.log`: timestamps are **continuous across the closed
@@ -346,7 +354,7 @@ nothing. Still unmeasured; not needed.
 
 ## 6. Battery policy
 
-- [ ] Default (battery off): on **battery**, click **Keep my Mac awake** → refusal
+- [ ] Default (battery off): on **battery**, click **Keep awake until I turn it off** → refusal
       alert with an **Open Settings…** button. Clicking it opens the Settings
       window.
 - [ ] Enable **Keep going on battery power**: on battery, above the floor, arm →
@@ -404,7 +412,7 @@ Then, in that state:
       **Off — your Mac will sleep normally** line and a live toggle. It must NEVER
       say "Finish the one-time setup to begin", and **Finish setup…** must not
       appear — that is the entire regression, and the whole point of the release.
-- [ ] Click **Keep my Mac awake** during that window. It must either arm outright
+- [ ] Click **Keep awake until I turn it off** during that window. It must either arm outright
       or show "Getting lidawake ready…" and then arm. It must not be greyed out,
       and it must not open the Welcome window.
 - [ ] Force the unreachable case — toggle lidawake OFF under **Allow in the
@@ -527,14 +535,109 @@ open it again within the 30 s.
       30 s the **speakers** are back at 10 and the headphones' level is untouched.
 - [ ] **Quit** → menu → Quit → back at **10** at once.
 
+## 12. "Until it goes quiet" — the detector (added for 1.6.0)
+
+> **What it is.** "Keep awake until it goes quiet" turns lidawake off 30 minutes
+> after the last thing it could see: you using the Mac, sound, video, one of your
+> programs at half a core or more, the graphics chip over 50 %, or network
+> traffic over 30 KB/s — the last three as a five-minute median, so a spike is
+> not work. macOS's own processes never count. A signal that cannot be read
+> counts as activity. The header of `Sources/App/IdleWatcher.swift` is the short
+> version; `Sources/App/ActivitySignals.swift` says exactly what is read and what
+> is thrown away.
+>
+> **Every number behind it was measured on macOS 27.0.1**, and two of its reads
+> are not public API: the GPU statistic, and the assertion table's
+> `AssertionTrueType`. **Re-run "What it reads" below after every macOS update.**
+> If either read breaks it shows `??`, counts as activity, and the detector
+> simply never fires — the safe way to break, and invisible unless someone looks.
+
+**The rule and its two classifiers — no hardware:**
+
+```sh
+swiftc -O -parse-as-library Sources/App/IdleWatcher.swift Sources/App/ArmMode.swift \
+    tools/idlewatcher-selftest.swift -o /tmp/lidawake-idle-selftest && /tmp/lidawake-idle-selftest
+tools/idlewatcher-mutations.sh    # breaks each rule on a copy; every one must be "caught"
+```
+
+**What it reads, live** — the app's own readers and rule in a terminal. It turns
+nothing on or off; it prints what quiet mode would see and when it would stop:
+
+```sh
+swiftc -O -parse-as-library Sources/App/IdleWatcher.swift Sources/App/ActivitySignals.swift \
+    tools/activity-probe.swift -o /tmp/lidawake-activity-probe
+/tmp/lidawake-activity-probe                              # the real 30 minutes, a line every 30 s
+LIDAWAKE_IDLE_SECONDS=120 /tmp/lidawake-activity-probe    # 2 minutes, a line every 2 s
+```
+
+- [ ] No column ever shows `??`.
+- [ ] `input` climbs while you keep your hands off and drops to ~0 when you
+      touch a key or the trackpad.
+- [ ] Play a song → `sound YES` within a tick. **Pause** → `no` within a tick or two.
+- [ ] A video in QuickTime → `video QuickTime Player`. A muted video in Firefox
+      → `video firefox`.
+- [ ] `yes > /dev/null` in another terminal for six minutes (2-minute window:
+      twenty seconds) → `programs: yes 1.00`, then "last: yes working". Ctrl-C it.
+- [ ] Hands off, nothing running → "WOULD TURN OFF NOW", with a sentence naming
+      the last activity and the time.
+
+> ⚠ **The test hook rewrites what the user reads.** `LIDAWAKE_IDLE_SECONDS`
+> shortens the window, and the minute count in the status line, the tooltip and
+> the "turned itself off" message is derived from the window — so under the hook
+> they say "2 minutes". A screenshot taken that way shows text no shipped build
+> produces.
+
+**The hardware pass** — the signed test build over the shared install (how, and
+how to put it back, is in the results log for 1.5.0). Launch it from Terminal
+with `LIDAWAKE_IDLE_SECONDS=300` to keep each run to minutes, and once at the
+real 30 for E9a. Take the Mac's sleep state from `pmset -g log`, never from the
+app's own account of itself.
+
+- [ ] **E9a — it turns off, lid shut on a monitor.** "Keep the screen on" **ON**
+      in Settings, on **battery**, quiet mode, nothing running, hands off. →
+      Off at the window; `pmset -g log` shows `Clamshell Sleep` seconds later;
+      on opening the lid, the notice names the last activity and the time.
+- [ ] **E9b — lid shut, no display.** Same, with no monitor attached.
+- [ ] **E9c — lid open.** Same, lid open on AC → off at the window, glyph back
+      to monochrome, a notice with no "Awake …" line.
+- [ ] **E2 — it does not turn off under your hands.** Lid shut on a monitor, on
+      battery, typing in a document for longer than the window → still on.
+- [ ] **E4 — work holds it, and lets go after.** One at a time: a download; a
+      compile (`./build.sh` in a loop); a local model run in Ollama. Each stays
+      on for as long as it runs and turns off one window after it ends, naming
+      it — "network traffic", "‹the tool› working", "the graphics chip busy".
+- [ ] **E13 — an AI agent running in a loop.** Quiet mode at the **real** 30
+      minutes; `/tmp/lidawake-activity-probe > ~/Desktop/e13.log` in one
+      terminal; in another, Claude Code with `/loop` on an interval of several
+      minutes; hands off for 45 minutes. **Expected: it is stopped at about 30
+      minutes** — that is the gap the tooltips warn about. Keep the log either
+      way: it shows what each poll looks like to every signal, and
+      `pmset -g assertions | grep caffeinate` during a wait shows whether the
+      agent declares itself. If it is *not* stopped, the tooltips and the
+      CHANGELOG are wrong and get corrected before release.
+- [ ] **E7 — every guard, in both modes.** Thermal, battery floor, unplug with
+      battery use off, force-quit (§7) behave identically whether the glyph is
+      blue or green.
+
+**Known, and not bugs** (they are named to the user where it matters): an agent
+in a loop is stopped; a muted video in Chrome, Edge, Brave, Arc or Comet is not
+seen (QuickTime, Firefox and Safari are); work under another account or as root
+is not seen unless it uses sound, the network or the GPU; CPU-only work inside
+Apple's built-in apps is not seen; and macOS's media analysis using the GPU can
+keep it on longer than it should, in which case the notice says "the graphics
+chip busy".
+
 ## Quick regression pass (after any code change)
 
 - [ ] `SIGN=1 ./build.sh` is clean and verifies.
 - [ ] `tools/lidwarning-selftest.swift` → ALL PASS (command in §11).
 - [ ] `tools/settings-selftest.swift` → ALL PASS (command in §5).
 - [ ] `tools/wakeassertion-selftest.swift` → ALL PASS (command in §5).
+- [ ] `tools/idlewatcher-selftest.swift` → all checks pass, and `tools/idlewatcher-mutations.sh`
+      → every mutation caught (commands in §12).
 - [ ] Arm on AC → `SleepDisabled 1`; disarm → `0`.
-- [ ] Glyph goes blue/mono with state; menu checkmark tracks state.
+- [ ] Glyph goes blue / green / mono with the mode; the checkmark tracks it;
+      switching modes while on leaves `SleepDisabled 1`.
 - [ ] Quit while armed → `SleepDisabled 0`.
 - [ ] A copy running outside `/Applications` does not stop the `/Applications`
       copy from starting (see section 1).

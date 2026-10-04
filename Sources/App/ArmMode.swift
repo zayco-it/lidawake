@@ -24,6 +24,29 @@ enum ArmMode: CaseIterable {
         case .untilQuiet: return "Keep awake until it goes quiet"
         }
     }
+
+    /// The only place the app explains the two modes: the tooltip on each item.
+    ///
+    /// BOTH say where an agent running in a loop belongs, in those words. It is
+    /// the gap that matters most to the people who use lidawake — an agent that
+    /// polls now and then and waits in between looks quiet to every signal, so
+    /// quiet mode stops it — and a gap nobody is told about is a broken promise
+    /// (spec §11.1, §11.4). `quietMinutes` is derived, never typed.
+    func toolTip(quietMinutes: Int) -> String {
+        switch self {
+        case .off:
+            return ""
+        case .untilOff:
+            return "Stays on until you turn it off, or until your Mac gets too hot or the battery runs low. "
+                + "Use this for anything that works in bursts with long waits in between \u{2014} "
+                + "an AI agent running in a loop belongs here."
+        case .untilQuiet:
+            return "Turns itself off \(quietMinutes) minutes after the last sign of activity: you using the Mac, "
+                + "sound or video playing, one of your programs working hard, the graphics chip, or steady network traffic. "
+                + "An AI agent running in a loop looks quiet between its checks and would be stopped \u{2014} "
+                + "use \u{201C}\(ArmMode.untilOff.menuTitle)\u{201D} for that."
+        }
+    }
 }
 
 /// What clicking a mode item does. `helper` is the only part that reaches the
