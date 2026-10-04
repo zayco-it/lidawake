@@ -3,7 +3,7 @@
 All notable changes to lidawake are documented here.
 This project follows [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [1.6.0] — 2026-10-04
 
 - **Two ways to keep your Mac awake, where there was one.** The menu now has "Keep awake until I turn it off" — what lidawake has always done — and "Keep awake until it goes quiet", which turns itself off 30 minutes after the last sign that anything is happening. The icon is blue in the first and green in the second. You can switch from one to the other while it is on without turning it off; clicking the one that is checked turns it off.
 - **"Until it goes quiet" watches for seven things:** you using the Mac, sound playing, video playing, one of your programs asking the Mac to stay awake, one of your programs working hard, the graphics chip working, and steady network traffic. What macOS does for itself in the background — analysing photos, indexing, syncing — does not count, however busy it gets. While it is on, the menu shows how long it has been quiet, or which program is keeping it on. A program in another person's account on the same Mac counts as well, but lidawake never shows you its name: it says "a program in another account". When it turns itself off, the note it leaves says what the last thing was and when: "The last thing it saw was sound playing, at 23:40."
